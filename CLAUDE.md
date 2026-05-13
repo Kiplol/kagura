@@ -357,8 +357,8 @@ of the stream into a temp WAV file, which aubiotrack then reads locally.
 - [ ] Seek bar interaction (click/scrub the progress bar)
 - [ ] Album art → block character / half-block rendering
 - [ ] MPRIS support on Linux (D-Bus via `github.com/godbus/dbus/v5`)
-- [ ] Settings screen (hotkey remapper)
-- [ ] `go install` / Homebrew formula for easy installation
+- [ ] Preferences panel — logout option, hotkey remapper
+- [ ] Homebrew formula (or `go install`) for easy installation
 - [x] UI state persistence — last tab, page, and scroll row saved across launches
 - [x] Auto DJ state persists across launches
 - [x] lrclib.net as third lyrics fallback (no API key required)
