@@ -28,9 +28,12 @@ type Hotkeys struct {
 
 // Config is the root configuration object persisted to disk.
 type Config struct {
-	Server  Server  `json:"server"`
-	Hotkeys Hotkeys `json:"hotkeys"`
-	AutoDJ  bool    `json:"auto_dj"`
+	Server     Server  `json:"server"`
+	Hotkeys    Hotkeys `json:"hotkeys"`
+	AutoDJ     bool    `json:"auto_dj"`
+	LastTab    int     `json:"last_tab"`
+	LastPage   int     `json:"last_page"`
+	LastRow    int     `json:"last_row"`
 }
 
 // Defaults returns a Config with blank custom hotkeys. Media keys (⏯ ⏭ ⏮)

@@ -424,7 +424,7 @@ func (a *App) buildMainPage() {
 
 	a.pages.AddPage("main", a.rootFlex, true, true)
 
-	a.tab = tabArtists
+	a.tab = a.cfg.LastTab
 	a.updateTabBar()
 	a.updateNowBar()
 	a.updateQueuePanel()
@@ -434,11 +434,44 @@ func (a *App) buildMainPage() {
 
 	// Restore the previously saved play queue from the server (async).
 	go a.loadPlayQueue()
+
+	// Load the last-used tab; restore page and row after content arrives.
+	go a.fetchTabAndRestore(a.cfg.LastTab, a.cfg.LastPage, a.cfg.LastRow)
 }
 
 // ---------------------------------------------------------------------------
 // Tab fetching (goroutines → QueueUpdateDraw)
 // ---------------------------------------------------------------------------
+
+// fetchTabAndRestore loads a tab then restores the saved page and row.
+// Used on startup to return the user to where they were.
+func (a *App) fetchTabAndRestore(tab, page, row int) {
+	a.fetchTab(tab)
+	if page == 0 && row == 0 {
+		return
+	}
+	a.tv.QueueUpdateDraw(func() {
+		if len(a.allItems) == 0 {
+			return
+		}
+		totalPages := (len(a.allItems) + pageSize - 1) / pageSize
+		if page >= totalPages {
+			page = 0
+		}
+		a.pageNum = page
+		a.applyPage()
+		// Clamp row to the visible page.
+		pageRows := pageSize
+		if page == totalPages-1 {
+			pageRows = len(a.allItems) - page*pageSize
+		}
+		if row >= pageRows {
+			row = 0
+		}
+		a.list.Select(row, 0)
+		a.list.ScrollToBeginning()
+	})
+}
 
 func (a *App) fetchTab(tab int) {
 	switch tab {
@@ -917,6 +950,7 @@ func (a *App) handleKey(event *tcell.EventKey) *tcell.EventKey {
 		if a.tv.GetFocus() != a.searchInput && a.pageNum > 0 {
 			a.pageNum--
 			a.applyPage()
+			a.saveUIState()
 			return nil
 		}
 
@@ -926,6 +960,7 @@ func (a *App) handleKey(event *tcell.EventKey) *tcell.EventKey {
 			if a.pageNum < totalPages-1 {
 				a.pageNum++
 				a.applyPage()
+				a.saveUIState()
 				return nil
 			}
 		}
@@ -952,8 +987,26 @@ func (a *App) switchTab(tab int) {
 	if tab == tabSearch && a.searchInput != nil {
 		a.searchInput.SetText("")
 	}
+	// Persist tab choice immediately.
+	a.cfg.LastTab = tab
+	a.cfg.LastPage = 0
+	a.cfg.LastRow = 0
+	go config.Save(a.cfg)
 	a.updateTabBar()
 	go a.fetchTab(tab)
+}
+
+// saveUIState persists the current tab, page, and selected row to config.
+// Called on page turn and periodically from the ticker.
+func (a *App) saveUIState() {
+	row, _ := a.list.GetSelection()
+	if a.cfg.LastTab == a.tab && a.cfg.LastPage == a.pageNum && a.cfg.LastRow == row {
+		return // nothing changed
+	}
+	a.cfg.LastTab = a.tab
+	a.cfg.LastPage = a.pageNum
+	a.cfg.LastRow = row
+	go config.Save(a.cfg)
 }
 
 // ---------------------------------------------------------------------------
@@ -1155,11 +1208,12 @@ func (a *App) ticker() {
 				st := a.player.State()
 				hotkey.UpdateNowPlaying(st.Title, "", st.Duration, st.Position, st.Playing)
 			}
-			// Save play queue to server every ~10 seconds to keep position in sync.
+			// Save play queue and UI state every ~10 seconds.
 			a.saveTickCount++
 			if a.saveTickCount >= 20 {
 				a.saveTickCount = 0
 				a.savePlayQueue()
+				a.saveUIState()
 			}
 		})
 	}
