@@ -112,7 +112,7 @@ After that, you land straight in your music library. Your last session is restor
 
 **App looks garbled** — make sure your terminal uses a font that supports Unicode. Any modern terminal (iTerm2, Ghostty, Kitty, Alacritty, macOS Terminal) works fine.
 
-**Media keys not working** — this uses macOS system APIs. Make sure Kagura is the frontmost app and hasn't been blocked in System Settings → Privacy.
+**Media keys not working** — this uses macOS system APIs (MPRemoteCommandCenter). Media keys work system-wide — you don't need Kagura in the foreground. If they're not responding, try playing a song first so Kagura registers as the active audio session.
 
 **Debug log** — if something isn't working, check `/tmp/kagura.log` for detailed output.
 
