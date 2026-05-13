@@ -354,7 +354,7 @@ of the stream into a temp WAV file, which aubiotrack then reads locally.
 
 ## What's Next
 
-- [ ] Album Artists tab (browse by album artist, distinct from the per-track Artist tab)
+- [ ] As-you-type search — debounced live results (~250ms), min 2 chars, stale-response guard
 - [ ] Album art → block character / half-block rendering
 - [ ] MPRIS support on Linux (D-Bus via `github.com/godbus/dbus/v5`)
 - [ ] Preferences panel — logout option, hotkey remapper

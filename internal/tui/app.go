@@ -23,14 +23,22 @@ import (
 )
 
 const (
-	tabArtists   = 0
-	tabAlbums    = 1
-	tabSongs     = 2
-	tabPlaylists = 3
-	tabSearch    = 4
+	tabArtists = 0
+	tabAlbums       = 1
+	tabSongs        = 2
+	tabPlaylists    = 3
+	tabFavorites    = 4
+	tabSearch       = 5
 )
 
-var tabNames = [5]string{"Artists", "Albums", "Songs", "Playlists", "Search"}
+var tabNames = [6]string{"Album Artists", "Albums", "Songs", "Playlists", "Favorites", "Search"}
+
+// starredAllEntry is used as the data field for "show N more" rows in the
+// Favorites tab. Selecting it drills into the full list.
+type starredAllEntry struct {
+	title string
+	items []listItem
+}
 
 // queuePaneWidth is the total character width of the right-side queue+cat panel.
 const queuePaneWidth = 28
@@ -137,6 +145,7 @@ type App struct {
 	queuePanel  *tview.TextView // right pane: scrolling queue list
 	catPanel    *tview.TextView // right pane: bongo cat visualizer
 	catPhase       int             // beat counter — drives both bongo and bars
+	lastBeatTime   time.Time       // wall time of the most recent beat tick
 	beatInterval   time.Duration   // time between beats (from BPM)
 	beatStop       chan struct{}    // close to stop the dedicated beat goroutine
 	visualizerMode int             // 0 = bongo cat, 1 = vertical bars
@@ -179,6 +188,7 @@ func Run(cfg config.Config) error {
 }
 
 func (a *App) run() error {
+	setWindowTitle("") // show idle decoration on startup
 	// Terminal-native colors: ColorDefault = transparent to terminal theme.
 	// ANSI 0-15 constants are sent as ANSI codes, which the terminal remaps.
 	tview.Styles.PrimitiveBackgroundColor = tcell.ColorDefault
@@ -406,8 +416,8 @@ func (a *App) buildMainPage() {
 	a.hintsBar = tview.NewTextView().SetDynamicColors(true)
 	a.hintsBar.SetBackgroundColor(tcell.ColorBlack)
 	a.hintsBar.SetText(
-		"[gray]  j/k:move  Enter:play  a:add  n:insert  c:clear  Space:⏯  " +
-			">.:next  <,:prev  []:seek  +-:vol  r:autodj  v:vis  ←→:page  1-5:tabs  /:search  ⌫:back  q:quit  ?:close[-]")
+		"[gray]  j/k:move  Enter:play  a:add  n:insert  c:clear  Space:⏯  >.:next  <,:prev  []:seek[-]\n" +
+			"[gray]  +-:vol  r:autodj  v:vis  ←→:page  1:artists  2:albums  3:songs  4:playlists  5:favs  /:search  ⌫:back  q:quit  ?:close[-]")
 
 	// Root layout (vertical flex) — hintsBar shown by default, toggled with ?
 	a.showHints = true
@@ -417,7 +427,7 @@ func (a *App) buildMainPage() {
 		AddItem(body, 0, 1, true).
 		AddItem(sep, 1, 0, false).
 		AddItem(a.nowBar, 2, 0, false).
-		AddItem(a.hintsBar, 1, 0, false)
+		AddItem(a.hintsBar, 2, 0, false)
 	a.rootFlex.SetBackgroundColor(tcell.ColorDefault)
 
 	a.tv.SetInputCapture(a.handleKey)
@@ -535,6 +545,74 @@ func (a *App) fetchTab(tab int) {
 			a.setItems(items, "")
 		})
 
+	case tabFavorites:
+		a.tv.QueueUpdateDraw(func() { a.restoreListFlex(); a.setLoading() })
+		starred, err := a.client.GetStarred()
+		a.tv.QueueUpdateDraw(func() {
+			if err != nil {
+				a.showError(err)
+				return
+			}
+			var items []listItem
+			const preview = 5
+
+			if len(starred.Artists) > 0 {
+				items = append(items, listItem{label: fmt.Sprintf("── ♥ Artists (%d) ──", len(starred.Artists))})
+				allItems := make([]listItem, len(starred.Artists))
+				for i, ar := range starred.Artists {
+					allItems[i] = listItem{label: ar.Name, data: ar}
+				}
+				for _, it := range allItems[:min(preview, len(allItems))] {
+					items = append(items, it)
+				}
+				if len(starred.Artists) > preview {
+					items = append(items, listItem{
+						label: fmt.Sprintf("  ── show %d more ──", len(starred.Artists)-preview),
+						data:  starredAllEntry{title: "Starred Artists", items: allItems},
+					})
+				}
+			}
+
+			if len(starred.Albums) > 0 {
+				items = append(items, listItem{label: fmt.Sprintf("── ♥ Albums (%d) ──", len(starred.Albums))})
+				allItems := make([]listItem, len(starred.Albums))
+				for i, al := range starred.Albums {
+					allItems[i] = listItem{label: dimArtistLabel(al.Name, al.Artist), data: al}
+				}
+				for _, it := range allItems[:min(preview, len(allItems))] {
+					items = append(items, it)
+				}
+				if len(starred.Albums) > preview {
+					items = append(items, listItem{
+						label: fmt.Sprintf("  ── show %d more ──", len(starred.Albums)-preview),
+						data:  starredAllEntry{title: "Starred Albums", items: allItems},
+					})
+				}
+			}
+
+			if len(starred.Songs) > 0 {
+				items = append(items, listItem{label: fmt.Sprintf("── ♥ Songs (%d) ──", len(starred.Songs))})
+				allItems := make([]listItem, len(starred.Songs))
+				for i, s := range starred.Songs {
+					allItems[i] = listItem{label: dimSongLabel(s.Title, s.Artist, s.Duration), data: s}
+				}
+				for _, it := range allItems[:min(preview, len(allItems))] {
+					items = append(items, it)
+				}
+				if len(starred.Songs) > preview {
+					items = append(items, listItem{
+						label: fmt.Sprintf("  ── show %d more ──", len(starred.Songs)-preview),
+						data:  starredAllEntry{title: "Starred Songs", items: allItems},
+					})
+				}
+			}
+
+			if len(items) == 0 {
+				items = []listItem{{label: "[gray]No starred items yet — heart something in Navidrome![-]"}}
+			}
+			a.setItems(items, "Favorites")
+		})
+
 	case tabSearch:
 		a.tv.QueueUpdateDraw(func() {
 			a.contentFlex.Clear()
@@ -547,6 +625,7 @@ func (a *App) fetchTab(tab int) {
 		})
 	}
 }
+
 
 func (a *App) fetchSearch(query string) {
 	artists, albums, songs, err := a.client.Search(query)
@@ -597,20 +676,93 @@ func (a *App) handleSelect(row int) {
 		a.pushNav(row)
 		a.setItems([]listItem{{label: "Loading…"}}, data.Name)
 		go func() {
-			albums, err := a.client.GetAlbums(data.ID)
-			a.tv.QueueUpdateDraw(func() {
+			// Fetch albums, top songs, and similar artists in parallel.
+			type result struct {
+				albums  []subsonic.Album
+				songs   []subsonic.Song
+				similar []subsonic.SimilarArtist
+				err     error
+			}
+			albumsCh := make(chan []subsonic.Album, 1)
+			songsCh := make(chan []subsonic.Song, 1)
+			similarCh := make(chan []subsonic.SimilarArtist, 1)
+			go func() {
+				al, err := a.client.GetAlbums(data.ID)
 				if err != nil {
-					a.showError(err)
-					return
+					al = nil
 				}
-				items := make([]listItem, len(albums))
+				albumsCh <- al
+			}()
+			go func() {
+				s, err := a.client.GetTopSongs(data.Name, 10)
+				if err != nil {
+					s = nil
+				}
+				songsCh <- s
+			}()
+			go func() {
+				sim, err := a.client.GetSimilarArtists(data.ID, 10)
+				if err != nil {
+					sim = nil
+				}
+				similarCh <- sim
+			}()
+			albums := <-albumsCh
+			songs := <-songsCh
+			similar := <-similarCh
+
+			a.tv.QueueUpdateDraw(func() {
+				var items []listItem
+
+				// --- Albums section ---
+				items = append(items, listItem{label: fmt.Sprintf("[gray]── Albums (%d) ──[-]", len(albums))})
+				const maxPreviewAlbums = 5
+				preview := albums
+				if len(preview) > maxPreviewAlbums {
+					preview = albums[:maxPreviewAlbums]
+				}
+				allAlbumItems := make([]listItem, len(albums))
 				for i, al := range albums {
 					label := al.Name
 					if al.Year > 0 {
-						label = fmt.Sprintf("%s (%d)", al.Name, al.Year)
+						label = fmt.Sprintf("%s [gray](%d)[-]", al.Name, al.Year)
 					}
-					items[i] = listItem{label: label, data: al}
+					allAlbumItems[i] = listItem{label: label, data: al}
 				}
+				for _, al := range preview {
+					label := al.Name
+					if al.Year > 0 {
+						label = fmt.Sprintf("%s [gray](%d)[-]", al.Name, al.Year)
+					}
+					items = append(items, listItem{label: label, data: al})
+				}
+				if len(albums) > maxPreviewAlbums {
+					items = append(items, listItem{
+						label: fmt.Sprintf("  ▸ View all %d albums", len(albums)),
+						data:  starredAllEntry{title: data.Name + " — Albums", items: allAlbumItems},
+					})
+				}
+
+				// --- Top Songs section ---
+				if len(songs) > 0 {
+					items = append(items, listItem{label: "[gray]── Top Songs ──[-]"})
+					for _, s := range songs {
+						items = append(items, listItem{label: dimSongLabel(s.Title, s.Artist, s.Duration), data: s})
+					}
+				}
+
+				// --- Similar Artists section ---
+				if len(similar) > 0 {
+					items = append(items, listItem{label: "[gray]── Similar Artists ──[-]"})
+					for _, sim := range similar {
+						// Use SimilarArtist as Artist so drill-down works normally.
+						items = append(items, listItem{
+							label: sim.Name,
+							data:  subsonic.Artist{ID: sim.ID, Name: sim.Name},
+						})
+					}
+				}
+
 				a.setItems(items, data.Name)
 			})
 		}()
@@ -672,6 +824,10 @@ func (a *App) handleSelect(row int) {
 			selIdx = 0
 		}
 		a.replaceQueueFrom(contextSongs, selIdx)
+
+	case starredAllEntry:
+		a.pushNav(row)
+		a.setItems(data.items, data.title)
 
 	default:
 		// header row — ignore
@@ -864,7 +1020,7 @@ func (a *App) handleKey(event *tcell.EventKey) *tcell.EventKey {
 				a.rootFlex.RemoveItem(a.hintsBar)
 				a.showHints = false
 			} else {
-				a.rootFlex.AddItem(a.hintsBar, 1, 0, false)
+				a.rootFlex.AddItem(a.hintsBar, 2, 0, false)
 				a.showHints = true
 			}
 			return nil
@@ -936,6 +1092,9 @@ func (a *App) handleKey(event *tcell.EventKey) *tcell.EventKey {
 			a.switchTab(tabPlaylists)
 			return nil
 		case '5':
+			a.switchTab(tabFavorites)
+			return nil
+		case '6':
 			a.switchTab(tabSearch)
 			return nil
 		case 'j':
@@ -1365,7 +1524,11 @@ func (a *App) updateLyricsPanel() {
 	}
 	lines := a.lyricsLines
 	if len(lines) == 0 {
-		a.lyricsPanel.SetText("")
+		if a.currentSongID != "" {
+			a.lyricsPanel.SetText("[gray]lyrics unavailable[-]")
+		} else {
+			a.lyricsPanel.SetText("")
+		}
 		return
 	}
 	var pos, dur float64
@@ -1431,6 +1594,7 @@ func (a *App) startBeatTicker() {
 					return
 				}
 				a.catPhase++
+				a.lastBeatTime = time.Now()
 				a.updateVisualizerPanel()
 			})
 		}
@@ -1453,16 +1617,28 @@ func (a *App) updateVisualizerPanel() {
 		} else {
 			a.catPanel.SetText(djFrame(1, bpm))
 		}
-	case 1: // vertical bars — sin-wave fake spectrum, beat-driven
+	case 1: // vertical bars — beat-pulse decay spectrum
+		// Compute how far through the current beat we are (0 = just beat, 1 = next beat).
+		var beatFraction float64
+		if a.beatInterval > 0 && !a.lastBeatTime.IsZero() {
+			beatFraction = float64(time.Since(a.lastBeatTime)) / float64(a.beatInterval)
+			if beatFraction > 1 {
+				beatFraction = 1
+			}
+		}
+		// Smooth decay: bars are tallest right after a beat, fall to ~20% by next beat.
+		pulse := math.Pow(1-beatFraction, 0.6)*0.8 + 0.2
+
 		t := float64(a.catPhase) * 0.5
 		var sb strings.Builder
 		for row := 0; row < catPanelHeight; row++ {
 			level := catPanelHeight - row // 7 at top row, 1 at bottom row
 			for bar := 0; bar < numBars; bar++ {
 				p := t + float64(bar)*0.6
+				// Each bar has a distinct resting shape; pulse scales the whole column.
 				h := math.Sin(p)*0.4 + math.Sin(p*1.9)*0.3 + math.Sin(p*3.1)*0.2
 				normalized := (h + 0.9) / 1.8 // map -0.9…0.9 → 0…1
-				height := 1 + int(normalized*float64(catPanelHeight-1))
+				height := 1 + int(normalized*pulse*float64(catPanelHeight-1))
 				if height < 1 {
 					height = 1
 				}
@@ -1641,7 +1817,7 @@ func (a *App) clearQueue() {
 	a.autoDJ = false
 	a.autoDJFetching = false
 	a.autoDJSource = ""
-	setWindowTitle("kagura")
+	setWindowTitle("")
 	a.savePlayQueue()
 	a.updateQueuePanel()
 	a.updateNowBar()
@@ -1678,7 +1854,7 @@ func (a *App) cleanup() {
 		}
 		_ = a.client.SavePlayQueue(ids, currentID, posMs)
 	}
-	setWindowTitle("kagura")
+	setWindowTitle("")
 	if a.player != nil {
 		a.player.Close()
 	}
@@ -1727,9 +1903,17 @@ func tableCell(text string) *tview.TableCell {
 // Utility
 // ---------------------------------------------------------------------------
 
-// setWindowTitle sets the terminal window/tab title using an OSC escape sequence.
+const windowTitleIdle = "▓▓▒▒░░ KAGURA 神楽 ░░▒▒▓▓"
+
+// setWindowTitle sets the terminal window/tab title.
+// Pass an empty string to show the idle decoration; pass a song title (+ artist)
+// to show just the track info while something is playing.
 func setWindowTitle(title string) {
-	fmt.Fprintf(os.Stdout, "\033]0;%s\007", title)
+	if title == "" {
+		fmt.Fprintf(os.Stdout, "\033]0;%s\007", windowTitleIdle)
+	} else {
+		fmt.Fprintf(os.Stdout, "\033]0;▓▓▒▒░░ %s ░░▒▒▓▓\007", title)
+	}
 }
 
 // appLogf appends a timestamped line to /tmp/kagura.log (shared with bpm package).

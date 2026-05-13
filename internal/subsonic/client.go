@@ -315,6 +315,59 @@ func (c *Client) GetRandomSongs(size int) ([]Song, error) {
 	return wrapper.Response.RandomSongs.Song, nil
 }
 
+// GetTopSongs returns up to count top songs for the given artist name.
+func (c *Client) GetTopSongs(artistName string, count int) ([]Song, error) {
+	params := url.Values{
+		"artist": {artistName},
+		"count":  {strconv.Itoa(count)},
+	}
+	data, err := c.get("getTopSongs", params)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Response struct {
+			TopSongs struct {
+				Song []Song `json:"song"`
+			} `json:"topSongs"`
+		} `json:"subsonic-response"`
+	}
+	if err := json.Unmarshal(data, &wrapper); err != nil {
+		return nil, err
+	}
+	return wrapper.Response.TopSongs.Song, nil
+}
+
+// SimilarArtist is a trimmed artist record returned by getArtistInfo2.
+type SimilarArtist struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// GetSimilarArtists returns similar artists for the given artist ID,
+// using Navidrome's getArtistInfo2 endpoint (backed by Last.fm).
+func (c *Client) GetSimilarArtists(artistID string, count int) ([]SimilarArtist, error) {
+	params := url.Values{
+		"id":    {artistID},
+		"count": {strconv.Itoa(count)},
+	}
+	data, err := c.get("getArtistInfo2", params)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Response struct {
+			ArtistInfo2 struct {
+				SimilarArtist []SimilarArtist `json:"similarArtist"`
+			} `json:"artistInfo2"`
+		} `json:"subsonic-response"`
+	}
+	if err := json.Unmarshal(data, &wrapper); err != nil {
+		return nil, err
+	}
+	return wrapper.Response.ArtistInfo2.SimilarArtist, nil
+}
+
 // GetSimilarSongs returns up to count songs similar to the given song.
 // Uses the Subsonic getSimilarSongs endpoint (backed by last.fm / ListenBrainz on Navidrome).
 // Falls back gracefully — callers should try GetRandomSongs if this returns nothing.
@@ -394,6 +447,39 @@ func (c *Client) SavePlayQueue(songIDs []string, currentID string, positionMs in
 	}
 	_, err := c.get("savePlayQueue", params)
 	return err
+}
+
+// StarredResult holds all starred (favourited) items.
+type StarredResult struct {
+	Artists []Artist
+	Albums  []Album
+	Songs   []Song
+}
+
+// GetStarred returns all items the user has starred in Navidrome.
+func (c *Client) GetStarred() (*StarredResult, error) {
+	data, err := c.get("getStarred2", nil)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Response struct {
+			Starred2 struct {
+				Artist []Artist `json:"artist"`
+				Album  []Album  `json:"album"`
+				Song   []Song   `json:"song"`
+			} `json:"starred2"`
+		} `json:"subsonic-response"`
+	}
+	if err := json.Unmarshal(data, &wrapper); err != nil {
+		return nil, err
+	}
+	s := wrapper.Response.Starred2
+	return &StarredResult{
+		Artists: s.Artist,
+		Albums:  s.Album,
+		Songs:   s.Song,
+	}, nil
 }
 
 // StreamURL returns the URL to stream a given song. This can be passed directly
