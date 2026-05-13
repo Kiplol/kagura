@@ -82,7 +82,7 @@ After that, you land straight in your music library. Your last session is restor
 | `,` or `<` | Previous track |
 | `+` / `-` | Volume up / down |
 | `r` | Toggle Auto DJ |
-| `v` | Switch visualizer (bongo cat ↔ bars) |
+| `v` | Switch visualizer (dancing DJ ↔ bars) |
 | `←` / `→` | Page through long lists |
 | `1`–`5` | Jump to tab (Artists / Albums / Songs / Playlists / Search) |
 | `/` | Search |
