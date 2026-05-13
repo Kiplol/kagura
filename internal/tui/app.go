@@ -407,7 +407,7 @@ func (a *App) buildMainPage() {
 	a.hintsBar.SetBackgroundColor(tcell.ColorBlack)
 	a.hintsBar.SetText(
 		"[gray]  j/k:move  Enter:play  a:add  n:insert  c:clear  Space:⏯  " +
-			">.:next  <,:prev  +-:vol  r:autodj  v:vis  ←→:page  1-5:tabs  /:search  ⌫:back  q:quit  ?:close[-]")
+			">.:next  <,:prev  []:seek  +-:vol  r:autodj  v:vis  ←→:page  1-5:tabs  /:search  ⌫:back  q:quit  ?:close[-]")
 
 	// Root layout (vertical flex) — hintsBar shown by default, toggled with ?
 	a.showHints = true
@@ -890,6 +890,16 @@ func (a *App) handleKey(event *tcell.EventKey) *tcell.EventKey {
 		case ',', '<':
 			if a.player != nil {
 				_ = a.player.Prev()
+			}
+			return nil
+		case '[':
+			if a.player != nil {
+				_ = a.player.SeekRelative(-10)
+			}
+			return nil
+		case ']':
+			if a.player != nil {
+				_ = a.player.SeekRelative(10)
 			}
 			return nil
 		case '+', '=':

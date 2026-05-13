@@ -80,6 +80,7 @@ After that, you land straight in your music library. Your last session is restor
 | `Space` | Play / pause |
 | `.` or `>` | Next track |
 | `,` or `<` | Previous track |
+| `[` / `]` | Seek back / forward 10 seconds |
 | `+` / `-` | Volume up / down |
 | `r` | Toggle Auto DJ |
 | `v` | Switch visualizer (dancing DJ ↔ bars) |

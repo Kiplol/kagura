@@ -175,6 +175,11 @@ func (p *Player) Seek(seconds float64) error {
 	return p.command("seek", seconds, "absolute")
 }
 
+// SeekRelative seeks forward or backward by the given number of seconds.
+func (p *Player) SeekRelative(seconds float64) error {
+	return p.command("seek", seconds, "relative")
+}
+
 // SetVolume sets volume 0–100.
 func (p *Player) SetVolume(vol int) error {
 	return p.setProperty("volume", vol)

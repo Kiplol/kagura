@@ -103,6 +103,8 @@ compile, the app still runs; hotkeys are silently disabled.
 | `Space` | Play / pause |
 | `.` or `>` | Next track |
 | `,` or `<` | Previous track |
+| `[` | Seek back 10 seconds |
+| `]` | Seek forward 10 seconds |
 | `+` / `=` | Volume up (+5%) |
 | `-` | Volume down (-5%) |
 | `r` | Toggle Auto DJ (fills queue with similar/random songs when running low) |
@@ -352,9 +354,7 @@ of the stream into a temp WAV file, which aubiotrack then reads locally.
 
 ## What's Next
 
-- [ ] Redo dancing DJ using Unicode Braille block art (⠿/⣿ characters) for a high-fidelity animated sprite
 - [ ] Album Artists tab (browse by album artist, distinct from the per-track Artist tab)
-- [ ] Seek bar interaction (click/scrub the progress bar)
 - [ ] Album art → block character / half-block rendering
 - [ ] MPRIS support on Linux (D-Bus via `github.com/godbus/dbus/v5`)
 - [ ] Preferences panel — logout option, hotkey remapper
