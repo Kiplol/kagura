@@ -56,7 +56,7 @@ Navidrome ASCII Client/
 - Key handling (`handleKey`)
 - Hotkey bridge (`handleHotkeyCmd`)
 - Now-playing ticker (`ticker`)
-- Beat ticker (`startBeatTicker`) — dedicated goroutine driving bongo cat animation
+- Beat ticker (`startBeatTicker`) — dedicated goroutine driving dancing DJ animation
 - UI state persistence (`saveUIState`) — saves tab/page/row to config
 - UI helpers (`updateTabBar`, `updateNowBar`, `updateQueuePanel`, `updateLyricsPanel`, `updateVisualizerPanel`, `setItems`, …)
 
@@ -106,7 +106,7 @@ compile, the app still runs; hotkeys are silently disabled.
 | `+` / `=` | Volume up (+5%) |
 | `-` | Volume down (-5%) |
 | `r` | Toggle Auto DJ (fills queue with similar/random songs when running low) |
-| `v` | Cycle visualizer (bongo cat → vertical bars) |
+| `v` | Cycle visualizer (dancing DJ → vertical bars) |
 | `←` / `→` | Page through browser list |
 | `1`–`5` | Switch browser tab (Artists/Albums/Songs/Playlists/Search) |
 | `/` | Jump to Search tab |
@@ -147,7 +147,7 @@ shows `(page X/Y  ←→)` when more than one page exists.
 │                                                │                   │
 │                                                │  [lyrics]         │
 │                                                │  ─────────────    │
-│                                                │  [bongo cat]      │
+│                                                │  [dancing DJ]      │
 ├─ separator ────────────────────────────────────┴───────────────────┤
 │ ▶  Track Title   ████████████████░░░░   1:23 / 4:56   vol 80%     │
 └─ key hints ────────────────────────────────────────────────────────┘
@@ -189,11 +189,11 @@ BPM is sourced in two ways:
 2. **Stream analysis** — if no tag is found, `aubiotrack` + `ffmpeg` analyze the first
    30 seconds of the audio stream in the background (requires `brew install aubio ffmpeg`)
 
-The bongo cat animation runs at the detected BPM. Falls back to 120 BPM if neither source
+The dancing DJ animation runs at the detected BPM. Falls back to 120 BPM if neither source
 yields a result. Debug output is logged to `/tmp/kagura.log`.
 
 ### Visualizer
-Press `v` to switch between bongo cat (ASCII art) and a vertical bars visualizer
+Press `v` to switch between dancing DJ (ASCII art) and a vertical bars visualizer
 (sin-wave pattern driven by `catPhase`).
 
 ### UI State Persistence
@@ -318,7 +318,7 @@ seeks back to the saved position in the currently playing song. Plain append (`a
 appends since that's always correct.
 
 ### Dedicated beat ticker goroutine
-The bongo cat animation runs in its own goroutine (`startBeatTicker`) rather than being driven
+The dancing DJ animation runs in its own goroutine (`startBeatTicker`) rather than being driven
 by the main 500ms polling ticker. This ensures every animation frame has an equal duration.
 
 The goroutine is restartable: calling `startBeatTicker()` closes the previous goroutine's stop
@@ -352,7 +352,7 @@ of the stream into a temp WAV file, which aubiotrack then reads locally.
 
 ## What's Next
 
-- [ ] Redo bongo cat using Unicode Braille block art (⠿/⣿ characters) for a high-fidelity animated sprite
+- [ ] Redo dancing DJ using Unicode Braille block art (⠿/⣿ characters) for a high-fidelity animated sprite
 - [ ] Album Artists tab (browse by album artist, distinct from the per-track Artist tab)
 - [ ] Seek bar interaction (click/scrub the progress bar)
 - [ ] Album art → block character / half-block rendering
@@ -365,7 +365,7 @@ of the stream into a temp WAV file, which aubiotrack then reads locally.
 - [x] BPM detection via aubiotrack + ffmpeg when file has no BPM tag
 - [x] Dedicated beat ticker goroutine — all animation frames equal length, no drift
 - [x] On-screen key hints bar (shown by default, toggle off/on with `?`)
-- [x] BPM-driven bongo cat animation
+- [x] BPM-driven dancing DJ animation
 - [x] Left/right arrow key pagination through browser lists
 - [x] Synced lyrics display in right pane (`getLyricsBySongId` + `getLyrics` fallback)
 - [x] Vertical bars visualizer, switchable with `v`

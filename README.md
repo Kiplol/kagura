@@ -15,7 +15,7 @@ A terminal music player for [Navidrome](https://www.navidrome.org/) — browse y
 │                                            │  ♪ never fade away   │
 │                                            │  ──────────────────  │
 │                                            │    ∿∿  ∿∿            │
-│                                            │  ʕ•ᴥ•ʔ  (^•ω•^)     │
+│                                            │   \(^‿^)/  ♪♫        │
 ├────────────────────────────────────────────┴──────────────────────┤
 │ ▶  The Sun's Gone Dim   ████████████░░░░░░░   2:14 / 5:38  80%   │
 └── space:play  j/k:move  enter:play  a:queue  r:dj  v:vis  ?:help ─┘
@@ -25,7 +25,7 @@ A terminal music player for [Navidrome](https://www.navidrome.org/) — browse y
 
 Kagura connects to your Navidrome server and gives you a full music browser in the terminal. You can explore your library by artist, album, or playlist; build up a queue on the fly; and let Auto DJ keep the music going when you run out of songs.
 
-A bongo cat dances in the corner at the song's actual BPM. Synced lyrics scroll in real time when they're available.
+A dancing DJ grooves in the corner at the song's actual BPM. Synced lyrics scroll in real time when they're available.
 
 Everything works with the keyboard. If you're on macOS, your media keys (including AirPods gestures and the lock screen) control playback too.
 
@@ -51,7 +51,7 @@ Coming soon.
 You'll need [Go 1.21+](https://go.dev/dl/).
 
 ```bash
-git clone https://github.com/your-username/kagura.git
+git clone https://github.com/Kiplol/kagura.git
 cd kagura
 go build ./cmd/kagura
 ./kagura
@@ -100,7 +100,7 @@ After that, you land straight in your music library. Your last session is restor
 
 **Synced lyrics** — when available, lyrics scroll in time with the music. Kagura tries your Navidrome server first, then falls back to [lrclib.net](https://lrclib.net/) (a free community lyrics database).
 
-**BPM-driven bongo cat** — the animation runs at the actual tempo of the song, read from the file's metadata. If your files don't have BPM tags, Kagura can detect it automatically using aubio (optional install).
+**BPM-driven dancing DJ** — the animation runs at the actual tempo of the song, read from the file's metadata. If your files don't have BPM tags, Kagura can detect it automatically using aubio (optional install).
 
 **Media keys on macOS** — play/pause, skip forward, and skip back all work from the keyboard media keys, AirPods double/triple tap, Control Center, and the lock screen.
 
@@ -108,7 +108,7 @@ After that, you land straight in your music library. Your last session is restor
 
 ## Troubleshooting
 
-**BPM always shows `---`** — your audio files probably don't have BPM tags embedded. Install `aubio` and `ffmpeg` (`brew install aubio ffmpeg`) to enable automatic BPM detection from the audio stream. Detection runs in the background and updates the display after about 30 seconds.
+**BPM always shows `---`** — your audio files probably don't have BPM tags embedded. Install `aubio` and `ffmpeg` (`brew install aubio ffmpeg`) to enable automatic BPM detection from the audio stream. Detection runs in the background and the DJ will start dancing at the right tempo after about 30 seconds.
 
 **App looks garbled** — make sure your terminal uses a font that supports Unicode. Any modern terminal (iTerm2, Ghostty, Kitty, Alacritty, macOS Terminal) works fine.
 
