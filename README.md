@@ -1,6 +1,6 @@
 # Kagura 神楽
 
-A terminal music player for [Navidrome](https://www.navidrome.org/) — browse your library, manage a play queue, and watch a bongo cat dance to every song, all without leaving the terminal.
+A terminal music player for [Navidrome](https://www.navidrome.org/) — browse your library, manage a play queue, and watch a dancing DJ groove to every song, all without leaving the terminal.
 
 ```
 ┌─ 1:Artists  2:Albums  3:Songs  4:Playlists  5:Search ─────────────┐
