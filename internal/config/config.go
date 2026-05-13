@@ -30,6 +30,7 @@ type Hotkeys struct {
 type Config struct {
 	Server  Server  `json:"server"`
 	Hotkeys Hotkeys `json:"hotkeys"`
+	AutoDJ  bool    `json:"auto_dj"`
 }
 
 // Defaults returns a Config with blank custom hotkeys. Media keys (⏯ ⏭ ⏮)

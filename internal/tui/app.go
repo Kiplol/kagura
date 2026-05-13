@@ -403,7 +403,7 @@ func (a *App) buildMainPage() {
 	a.hintsBar.SetBackgroundColor(tcell.ColorBlack)
 	a.hintsBar.SetText(
 		"[gray]  j/k:move  Enter:play  a:add  n:insert  c:clear  Space:⏯  " +
-			">.:next  <,:prev  +-:vol  r:dj  v:vis  ←→:page  1-5:tabs  /:search  ⌫:back  q:quit  ?:close[-]")
+			">.:next  <,:prev  +-:vol  r:autodj  v:vis  ←→:page  1-5:tabs  /:search  ⌫:back  q:quit  ?:close[-]")
 
 	// Root layout (vertical flex) — hintsBar shown by default, toggled with ?
 	a.showHints = true
@@ -424,6 +424,9 @@ func (a *App) buildMainPage() {
 	a.updateTabBar()
 	a.updateNowBar()
 	a.updateQueuePanel()
+
+	// Restore Auto DJ state from config.
+	a.autoDJ = a.cfg.AutoDJ
 
 	// Restore the previously saved play queue from the server (async).
 	go a.loadPlayQueue()
@@ -811,6 +814,8 @@ func (a *App) handleKey(event *tcell.EventKey) *tcell.EventKey {
 		case 'r':
 			a.autoDJ = !a.autoDJ
 			a.autoDJFetching = false
+			a.cfg.AutoDJ = a.autoDJ
+			go config.Save(a.cfg)
 			a.updateQueuePanel()
 			return nil
 		case 'v':
