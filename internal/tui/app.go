@@ -138,7 +138,7 @@ type App struct {
 	catPanel    *tview.TextView // right pane: bongo cat visualizer
 	catPhase       int             // beat counter — drives both bongo and bars
 	beatInterval   time.Duration   // time between beats (from BPM)
-	lastBeat       time.Time       // when the last beat fired
+	beatStop       chan struct{}    // close to stop the dedicated beat goroutine
 	visualizerMode int             // 0 = bongo cat, 1 = vertical bars
 	lyricsPanel    *tview.TextView // right pane: synced lyrics
 	currentSongID  string          // ID of the song whose lyrics are loaded
@@ -1020,21 +1020,28 @@ func (a *App) ticker() {
 			}
 			a.mu.Unlock()
 			// Prefer BPM read directly from the file's tags by mpv (most accurate),
-			// fall back to Subsonic metadata, then to 120 BPM default.
+			// fall back to Subsonic metadata. aubio detection (async) may update
+			// currentBPM later — don't overwrite it here once it's been set.
 			if a.player != nil {
 				if mpvBPM := a.player.State().BPM; mpvBPM > 0 {
 					bpm = mpvBPM
 				}
 			}
-			a.currentBPM = bpm // 0 = no tag found; shown as "---" in visualizer
-			if bpm > 0 {
-				a.beatInterval = time.Duration(60000/bpm) * time.Millisecond
+			// Use aubio-detected BPM for beat interval if available; otherwise tag BPM.
+			effectiveBPM := bpm
+			if a.currentBPM > 0 {
+				effectiveBPM = a.currentBPM
+			}
+			if effectiveBPM > 0 {
+				a.beatInterval = time.Duration(60000/effectiveBPM) * time.Millisecond
 			} else {
 				a.beatInterval = 500 * time.Millisecond // fallback ~120 BPM
 			}
 			// Detect song change, update window title, and fetch lyrics.
 			if hasSong && nowSong.ID != a.currentSongID {
 				a.currentSongID = nowSong.ID
+				a.currentBPM = bpm // reset to tag BPM (0 if none); aubio will update async
+				a.startBeatTicker()
 				if nowSong.Artist != "" {
 					setWindowTitle(nowSong.Title + " — " + nowSong.Artist)
 				} else {
@@ -1087,6 +1094,7 @@ func (a *App) ticker() {
 								}
 								a.currentBPM = detected
 								a.beatInterval = time.Duration(60000/detected) * time.Millisecond
+								a.startBeatTicker() // restart at correct tempo
 								a.updateVisualizerPanel()
 								appLogf("BPM set to %d, visualizer updated", a.currentBPM)
 							})
@@ -1282,25 +1290,6 @@ func (a *App) updateQueuePanel() {
 
 	a.queuePanel.SetText(sb.String())
 
-	// Advance bongo cat on each beat; freeze at idle when paused.
-	if a.player != nil && a.player.State().Playing {
-		now := time.Now()
-		interval := a.beatInterval
-		if interval <= 0 {
-			interval = 500 * time.Millisecond
-		}
-		if a.lastBeat.IsZero() || now.Sub(a.lastBeat) >= interval {
-			a.catPhase++
-			if a.lastBeat.IsZero() {
-				a.lastBeat = now
-			} else {
-				a.lastBeat = a.lastBeat.Add(interval)
-			}
-		}
-	} else {
-		a.catPhase = 0
-		a.lastBeat = time.Time{}
-	}
 	a.updateVisualizerPanel()
 }
 
@@ -1347,6 +1336,41 @@ func (a *App) updateLyricsPanel() {
 		sb.WriteString("[gray]" + lines[idx+1].Text + "[-]")
 	}
 	a.lyricsPanel.SetText(sb.String())
+}
+
+// startBeatTicker launches a dedicated goroutine that advances catPhase at
+// exactly the current beatInterval. Replaces any previously running beat
+// goroutine so BPM changes take effect immediately without frame-timing drift.
+func (a *App) startBeatTicker() {
+	// Stop any existing beat goroutine.
+	if a.beatStop != nil {
+		close(a.beatStop)
+	}
+	a.beatStop = make(chan struct{})
+	stop := a.beatStop
+
+	go func() {
+		for {
+			interval := a.beatInterval
+			if interval <= 0 {
+				interval = 500 * time.Millisecond
+			}
+			select {
+			case <-stop:
+				return
+			case <-time.After(interval):
+			}
+			a.tv.QueueUpdateDraw(func() {
+				if a.player == nil || !a.player.State().Playing {
+					a.catPhase = 0
+					a.updateVisualizerPanel()
+					return
+				}
+				a.catPhase++
+				a.updateVisualizerPanel()
+			})
+		}
+	}()
 }
 
 // updateVisualizerPanel renders the current visualizer frame (DJ dancer or bars).
@@ -1564,6 +1588,11 @@ func (a *App) clearQueue() {
 // ---------------------------------------------------------------------------
 
 func (a *App) cleanup() {
+	// Stop the beat ticker goroutine.
+	if a.beatStop != nil {
+		close(a.beatStop)
+		a.beatStop = nil
+	}
 	// Save final queue position synchronously before shutting down.
 	if a.client != nil {
 		a.mu.Lock()
