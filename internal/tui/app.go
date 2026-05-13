@@ -6,6 +6,7 @@ package tui
 import (
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -45,23 +46,37 @@ const numBars = queuePaneWidth / 2
 // catPanelHeight is the number of rows reserved for the bongo cat visualizer.
 const catPanelHeight = 7
 
-// Bongo cat ASCII frames. Phase 0 = paws resting (post-strike), phase 1 = left paw raised.
-// Impact marks (ii / i) are coloured red via tview dynamic colour tags.
-const bongoIdle = "           /\\  /\\\n" +
-	" ________ /  \\/  \\\n" +
-	"/ ●             \\\n" +
-	"|  ~~ (oo)       |\n" +
-	" \\_______________/\n" +
-	"[red]ii[-]\n" +
-	" [red]i[-]"
-
-const bongoBeat = "(oo)\n" +
-	" |   _______  /\\  /\\\n" +
-	" \\_/ ●       /  \\/  \\\n" +
-	"    | ~~ (oo)       |\n" +
-	"     \\_______________/\n" +
-	"                [red]ii[-]\n" +
-	"                 [red]i[-]"
+// djFrame builds a DJ dancer kaomoji frame.
+// pose 0 = left arm up ┏...┛, pose 1 = right arm up ┗...┓, pose -1 = idle.
+// bpm is displayed on the bottom line; pass 0 to show "---".
+func djFrame(pose, bpm int) string {
+	var bpmStr string
+	if bpm > 0 {
+		bpmStr = fmt.Sprintf("[gray]♩ %d bpm[-]", bpm)
+	} else {
+		bpmStr = "[gray]♩ ---[-]"
+	}
+	switch pose {
+	case 0:
+		return "  [yellow]♪[-]  [yellow]♫[-]  [yellow]♪[-]\n" +
+			" [white]┏[gray](･o･)[white]┛[-]\n" +
+			"  [gray]( DJ~ )[-]\n" +
+			"  [gray]└─────┘[-]\n" +
+			"  " + bpmStr
+	case 1:
+		return "  [yellow]♪[-]  [yellow]♫[-]  [yellow]♪[-]\n" +
+			" [white]┗[gray](･o･)[white]┓[-]\n" +
+			"  [gray]( ~DJ )[-]\n" +
+			"  [gray]└─────┘[-]\n" +
+			"  " + bpmStr
+	default: // idle
+		return "\n" +
+			"  [gray](･o･)[-]\n" +
+			"  [gray]( DJ  )[-]\n" +
+			"  [gray]└─────┘[-]\n" +
+			"  " + bpmStr
+	}
+}
 
 // loginArt is the bonsai sakura tree shown on the login screen.
 // Uses tview dynamic color tags; hex colors are decorative-only (login art, not UI chrome).
@@ -925,6 +940,9 @@ func (a *App) switchTab(tab int) {
 	a.tab = tab
 	a.navStack = nil
 	a.breadText = ""
+	if tab == tabSearch && a.searchInput != nil {
+		a.searchInput.SetText("")
+	}
 	a.updateTabBar()
 	go a.fetchTab(tab)
 }
@@ -997,20 +1015,33 @@ func (a *App) ticker() {
 			} else {
 				a.beatInterval = 500 * time.Millisecond // fallback ~120 BPM
 			}
-			// Detect song change and fetch lyrics.
+			// Detect song change, update window title, and fetch lyrics.
 			if hasSong && nowSong.ID != a.currentSongID {
 				a.currentSongID = nowSong.ID
+				if nowSong.Artist != "" {
+					setWindowTitle(nowSong.Title + " — " + nowSong.Artist)
+				} else {
+					setWindowTitle(nowSong.Title)
+				}
 				a.lyricsLines = nil
 				a.lyricsSynced = false
 				if a.client != nil {
-					go func(id, artist, title string) {
+					go func(id, artist, title, album string, duration int) {
 						lines, synced, err := a.client.GetLyricsBySongId(id)
 						if err != nil || len(lines) == 0 {
 							plain, err2 := a.client.GetLyrics(artist, title)
 							if err2 == nil && len(plain) > 0 {
 								lines = plain
+								synced = false
 							}
-							synced = false
+						}
+						// Third fallback: lrclib.net
+						if len(lines) == 0 {
+							lrcLines, lrcSynced, _ := subsonic.GetLyricsFromLrcLib(artist, title, album, duration)
+							if len(lrcLines) > 0 {
+								lines = lrcLines
+								synced = lrcSynced
+							}
 						}
 						a.tv.QueueUpdateDraw(func() {
 							if a.currentSongID == id {
@@ -1018,7 +1049,7 @@ func (a *App) ticker() {
 								a.lyricsSynced = synced
 							}
 						})
-					}(nowSong.ID, nowSong.Artist, nowSong.Title)
+					}(nowSong.ID, nowSong.Artist, nowSong.Title, nowSong.Album, nowSong.Duration)
 				}
 			}
 			// Auto DJ: when 2 or fewer songs remain, fetch more.
@@ -1276,17 +1307,24 @@ func (a *App) updateLyricsPanel() {
 	a.lyricsPanel.SetText(sb.String())
 }
 
-// updateVisualizerPanel renders the current visualizer frame (bongo cat or bars).
+// updateVisualizerPanel renders the current visualizer frame (DJ dancer or bars).
 func (a *App) updateVisualizerPanel() {
 	if a.catPanel == nil {
 		return
 	}
 	switch a.visualizerMode {
-	case 0: // bongo cat
-		if a.catPhase%2 == 0 {
-			a.catPanel.SetText(bongoIdle)
+	case 0: // DJ dancer
+		playing := a.player != nil && a.player.State().Playing
+		var bpm int
+		if a.beatInterval > 0 {
+			bpm = int(60000 / a.beatInterval.Milliseconds())
+		}
+		if !playing {
+			a.catPanel.SetText(djFrame(-1, bpm))
+		} else if a.catPhase%2 == 0 {
+			a.catPanel.SetText(djFrame(0, bpm))
 		} else {
-			a.catPanel.SetText(bongoBeat)
+			a.catPanel.SetText(djFrame(1, bpm))
 		}
 	case 1: // vertical bars — sin-wave fake spectrum, beat-driven
 		t := float64(a.catPhase) * 0.5
@@ -1345,6 +1383,7 @@ func (a *App) applyPage() {
 	}
 	if a.list.GetRowCount() > 0 {
 		a.list.Select(0, 0)
+		a.list.ScrollToBeginning()
 	}
 
 	totalPages := (len(a.allItems) + pageSize - 1) / pageSize
@@ -1475,6 +1514,7 @@ func (a *App) clearQueue() {
 	a.autoDJ = false
 	a.autoDJFetching = false
 	a.autoDJSource = ""
+	setWindowTitle("kagura")
 	a.savePlayQueue()
 	a.updateQueuePanel()
 	a.updateNowBar()
@@ -1506,6 +1546,7 @@ func (a *App) cleanup() {
 		}
 		_ = a.client.SavePlayQueue(ids, currentID, posMs)
 	}
+	setWindowTitle("kagura")
 	if a.player != nil {
 		a.player.Close()
 	}
@@ -1553,6 +1594,11 @@ func tableCell(text string) *tview.TableCell {
 // ---------------------------------------------------------------------------
 // Utility
 // ---------------------------------------------------------------------------
+
+// setWindowTitle sets the terminal window/tab title using an OSC escape sequence.
+func setWindowTitle(title string) {
+	fmt.Fprintf(os.Stdout, "\033]0;%s\007", title)
+}
 
 func progressBar(pos, dur float64, width int) string {
 	if dur <= 0 {
