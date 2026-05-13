@@ -1,0 +1,332 @@
+# Kagura — Project Guide
+
+A terminal-based music client for Navidrome servers. Renders a full TUI in any terminal (macOS + Linux), streams audio via mpv, and supports Apple media keys.
+
+**The active implementation is Go + tview.** (A previous bubbletea version was abandoned due to persistent ghost-content/overdraw bugs in its differential renderer. Remnants live in `internal/tui/views/` and `internal/tui/components/` but carry `//go:build ignore` tags and are not compiled. A Python/Textual spike also exists but is similarly dead code.)
+
+---
+
+## Tech Stack
+
+| Layer | Choice | Notes |
+|---|---|---|
+| Language | Go 1.21+ | Single binary, ships cross-platform |
+| TUI framework | tview + tcell | Widget-based, absolute cell addressing — no differential renderer |
+| Audio playback | mpv over IPC | Unix socket at `/tmp/kagura-mpv.sock`; mpv launched as subprocess |
+| Server protocol | Subsonic REST API | What Navidrome speaks; token auth (MD5 + salt) |
+| Media keys (macOS) | CGo → MPRemoteCommandCenter | `internal/hotkey/media_keys_darwin.go` |
+| Media keys (Linux) | Not yet implemented | Stub in `media_keys_linux.go` |
+| Config | JSON at `~/.config/kagura/config.json` | Saved on first login |
+
+---
+
+## Project Layout
+
+```
+Navidrome ASCII Client/
+├── cmd/kagura/
+│   └── main.go                        # Entry point — calls tui.Run(cfg)
+├── internal/
+│   ├── config/config.go               # Load/save JSON config
+│   ├── subsonic/client.go             # Subsonic REST API client (token auth)
+│   ├── mpv/player.go                  # mpv IPC wrapper (Unix socket)
+│   ├── hotkey/
+│   │   ├── daemon.go                  # Hotkey daemon — routes commands to app
+│   │   ├── media_keys_darwin.go       # macOS MPRemoteCommandCenter (CGo)
+│   │   └── media_keys_linux.go        # Linux stub (MPRIS planned)
+│   └── tui/
+│       ├── app.go                     # ALL active TUI code — screens, widgets, key handling
+│       ├── views/                     # OLD bubbletea views — all tagged //go:build ignore
+│       └── components/                # OLD bubbletea components — all tagged //go:build ignore
+└── go.mod / go.sum
+```
+
+`internal/tui/app.go` is the single source of truth for the TUI. It contains:
+- `App` struct with all widget references and playback/navigation state
+- `Run(cfg)` entry point
+- Login screen (`buildLoginPage`) — ASCII bonsai sakura tree art
+- Main screen (`buildMainPage`) — browser on the left, queue+visualizer panel on the right
+- Tab fetching goroutines (`fetchTab`, `fetchSearch`)
+- Selection/navigation (`handleSelect`, `pushNav`, `popNav`)
+- Queue management (`enqueue`, `enqueueSelected`, `replaceQueueFrom`, `clearQueue`)
+- Play queue persistence (`savePlayQueue`, `loadPlayQueue`)
+- Key handling (`handleKey`)
+- Hotkey bridge (`handleHotkeyCmd`)
+- Now-playing ticker (`ticker`)
+- UI helpers (`updateTabBar`, `updateNowBar`, `updateQueuePanel`, `updateLyricsPanel`, `updateVisualizerPanel`, `setItems`, …)
+
+---
+
+## Building & Running
+
+```bash
+cd "Navidrome ASCII Client"
+
+# First time — install mpv (required for audio)
+brew install mpv
+
+# Build
+go build ./cmd/kagura
+
+# Run
+./kagura
+```
+
+On first launch the login screen appears. Credentials are saved to
+`~/.config/kagura/config.json`; subsequent launches go straight to the browser
+with the previously saved queue restored (paused at the last position).
+
+macOS media keys work automatically (CGo + system frameworks). If the Objective-C layer fails to
+compile, the app still runs; hotkeys are silently disabled.
+
+---
+
+## In-App Keybindings
+
+| Key | Action |
+|---|---|
+| `j` / `↓` | Move down |
+| `k` / `↑` | Move up |
+| `Enter` | Select / drill in; on a song: replace queue with context, play from that song; auto-unpauses if paused |
+| `a` | Enqueue highlighted item (song, album, or playlist) — append |
+| `n` | Enqueue highlighted item — insert next |
+| `c` | Clear queue and stop playback |
+| `Space` | Play / pause |
+| `.` or `>` | Next track |
+| `,` or `<` | Previous track |
+| `+` / `=` | Volume up (+5%) |
+| `-` | Volume down (-5%) |
+| `r` | Toggle Auto DJ (fills queue with similar/random songs when running low) |
+| `v` | Cycle visualizer (bongo cat → vertical bars) |
+| `←` / `→` | Page through browser list |
+| `1`–`5` | Switch browser tab (Artists/Albums/Songs/Playlists/Search) |
+| `/` | Jump to Search tab |
+| `Backspace` | Go back (drill-down) |
+| `?` | Toggle key hints bar |
+| `q` / Ctrl-C | Quit (saves queue position first) |
+
+### Media keys (macOS)
+⏯ Play/Pause, ⏭ Next, ⏮ Previous — AirPods gestures, Control Center, and lock screen all work.
+
+---
+
+## Browser Tabs
+
+| Tab | Contents | Drill-down |
+|---|---|---|
+| 1: Artists | All artists (A–Z), paginated | → Albums → Songs |
+| 2: Albums | All albums (A–Z), paginated | → Songs |
+| 3: Songs | 50 random songs | Play directly |
+| 4: Playlists | All playlists | → Songs |
+| 5: Search | Type + Enter | Results: artists, albums, songs |
+
+Lists longer than 50 items are paginated; `←`/`→` move between pages. The breadcrumb
+shows `(page X/Y  ←→)` when more than one page exists.
+
+---
+
+## Layout
+
+```
+┌─ tab bar ──────────────────────────────────────────────────────────┐
+│ 1:Artists  2:Albums  3:Songs  4:Playlists  5:Search                │
+├─ breadcrumb ───────────────────────────────────┬─ queue pane ──────┤
+│ Artist Name                                    │  ▶ Now Playing    │
+│                                                │  1. Song A        │
+│  Song list / browser content                   │  2. Song B        │
+│                                                │  3. Song C        │
+│                                                │                   │
+│                                                │  [lyrics]         │
+│                                                │  ─────────────    │
+│                                                │  [bongo cat]      │
+├─ separator ────────────────────────────────────┴───────────────────┤
+│ ▶  Track Title   ████████████████░░░░   1:23 / 4:56   vol 80%     │
+└─ key hints ────────────────────────────────────────────────────────┘
+```
+
+The right pane (~28 chars wide) shows the queue, synced lyrics (3–5 lines), and
+the visualizer. The progress bar spans the full terminal width dynamically.
+
+---
+
+## Features
+
+### Play Queue Persistence
+The queue is synced with Navidrome's `savePlayQueue` / `getPlayQueue` Subsonic endpoints.
+- On launch: queue is restored and loaded into mpv, paused at the saved position
+- On change: saved immediately (after `replaceQueueFrom`, `enqueue`, `clearQueue`)
+- Periodically: saved every ~10 seconds to keep playback position current
+- On quit: saved synchronously before mpv is torn down
+- Cross-client: the saved queue is visible from any Subsonic client (Feishin, etc.)
+
+### Auto DJ
+Press `r` to toggle. When 2 or fewer songs remain in the queue, Kagura fetches 20
+similar songs via `getSimilarSongs` (requires Last.fm integration in Navidrome) and
+falls back to `getRandomSongs`. Already-queued songs are filtered out. The queue
+header shows `DJ:similar` or `DJ:random` to indicate the source.
+
+### Synced Lyrics
+Fetched automatically when a song starts. Uses `getLyricsBySongId` (OpenSubsonic,
+returns LRC timestamps) with `getLyrics` (plain text) as fallback. Displays 3 lines
+(previous / current / next) in the right pane, highlighted at the current position.
+
+### BPM-Driven Bongo Cat
+The bongo cat animation advances at the song's BPM (from track metadata). Uses a
+fixed-timestep accumulator (`lastBeat = lastBeat.Add(interval)`) to prevent drift.
+Falls back to 120 BPM when no BPM metadata is present.
+
+### Visualizer
+Press `v` to switch between bongo cat (ASCII art) and a vertical bars visualizer
+(sin-wave pattern driven by `catPhase`).
+
+---
+
+## Color Approach: Terminal-Native (No Hardcoded Theme)
+
+The app uses **no hex colors** in the UI chrome. All colors are either `tcell.ColorDefault`
+(transparent — inherits the terminal background) or ANSI 0-15 indices that the terminal
+theme remaps automatically.
+
+```go
+tview.Styles.PrimitiveBackgroundColor = tcell.ColorDefault  // transparent
+tview.Styles.ContrastBackgroundColor = tcell.ColorBlack     // ANSI 0
+tview.Styles.BorderColor             = tcell.ColorGray      // ANSI 8
+tview.Styles.PrimaryTextColor        = tcell.ColorDefault
+tview.Styles.SecondaryTextColor      = tcell.ColorGray
+
+// Tab bar + now-playing bar surface
+widget.SetBackgroundColor(tcell.ColorBlack) // ANSI 0
+
+// Selection highlight
+selStyle := tcell.StyleDefault.
+    Background(tcell.ColorBlack).
+    Foreground(tcell.ColorNavy) // ANSI 4 → blue (remapped by theme)
+```
+
+**Exception:** the login screen bonsai art uses hex colors (`#f9a8c9`, `#f472b6`, etc.)
+purely for decorative effect. These are intentional and isolated to the `loginArt` constant.
+
+This means the app looks correct under any terminal color theme — Catppuccin Mocha, Dracula,
+Tokyo Night, etc. — without any per-theme configuration.
+
+---
+
+## Key Design Decisions
+
+### Why tview (not bubbletea)
+bubbletea uses a differential renderer that moves the cursor up by counting `\n` characters in the
+previous frame. Any variation in frame height (paginator rows, status bar, wide Unicode characters)
+permanently desyncs the renderer, leaving ghost content on screen. Multiple fix attempts all failed.
+tview renders to an absolute cell grid — no line counting, no drift.
+
+### tview.Table (not tview.List)
+`tview.List` has a secondary-text rendering quirk: `ShowSecondaryText(false)` doesn't reliably
+suppress secondary text, which appeared as ghost lines ("1 albums", "2 albums") under artist names.
+`tview.Table` has no secondary text concept at all and is used everywhere for browser content.
+
+```go
+a.list = tview.NewTable().SetSelectable(true, false)
+```
+
+### mpv TTY isolation (critical)
+mpv writes ANSI escape sequences to the controlling TTY even with `--really-quiet` and
+stdout/stderr redirected to `/dev/null`. These sequences scroll the display and corrupt tview's
+rendering. The fix requires three things in combination:
+
+```go
+cmd := exec.Command("mpv",
+    "--no-video",
+    "--no-terminal", // tells mpv not to touch the TTY at all
+    "--idle=yes",
+    "--really-quiet",
+    fmt.Sprintf("--input-ipc-server=%s", socketPath),
+)
+devNull, _ := os.OpenFile(os.DevNull, os.O_RDWR, 0)
+cmd.Stdin  = devNull
+cmd.Stdout = devNull
+cmd.Stderr = devNull
+cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // new session = no controlling TTY
+```
+
+`Setsid: true` creates a new process group/session, removing the controlling TTY entirely.
+
+### screen.Clear() in BeforeDrawFunc
+Even with ColorDefault backgrounds, leftover terminal content can bleed through transparent cells
+between draw passes. Clearing the whole screen before each tview draw pass prevents this:
+
+```go
+a.tv.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
+    screen.Clear()
+    return false
+})
+```
+
+### SetBackgroundColor chain-breaking (tview quirk)
+In the installed tview version, `SetBackgroundColor` (inherited from `*tview.Box`) returns
+`*tview.Box`, not the original widget type. This breaks method chains when the result is assigned
+to a typed variable. Always split into two statements:
+
+```go
+// WRONG — compile error: cannot use *tview.Box as *tview.TextView
+a.tabBar = tview.NewTextView().SetDynamicColors(true).SetBackgroundColor(tcell.ColorBlack)
+
+// CORRECT
+a.tabBar = tview.NewTextView().SetDynamicColors(true)
+a.tabBar.SetBackgroundColor(tcell.ColorBlack)
+```
+
+### tview.Pages: visible=true + SwitchToPage
+`AddPage` must be called with `visible=true` as the fourth argument, AND `SwitchToPage` must be
+called explicitly after building the main page when skipping login:
+
+```go
+a.pages.AddPage("main", root, true, true)   // last param = visible
+a.pages.SwitchToPage("main")                // also required
+```
+
+### Context-replace queue on Enter
+When the user presses Enter on a song inside an album/playlist/search results, the entire visible
+song list becomes the new queue (clearing whatever was there before), and playback starts from the
+selected song. Songs before the selection are still in the queue as "past" tracks (navigable with
+Prev). `a` and `n` enqueue only the highlighted item (not the whole list).
+
+### Insert-next rebuilds the mpv playlist
+`loadfile … append-play` always appends to the *end* of mpv's internal playlist. When inserting
+next (`n` key), the full mpv playlist is rebuilt in the correct order via `LoadPlaylistAt`, then
+seeks back to the saved position in the currently playing song. Plain append (`a`) still just
+appends since that's always correct.
+
+### Fixed-timestep beat timer
+To prevent the bongo cat animation from drifting or doubling up, the beat timer uses an accumulator:
+
+```go
+a.lastBeat = a.lastBeat.Add(interval) // NOT: a.lastBeat = now
+```
+
+Using `now` would snap the timer baseline forward on each tick, causing two rapid beats whenever
+a ticker fired slightly late. The accumulator advances by exactly one interval regardless of when
+the tick actually fired.
+
+---
+
+## What's Next
+
+- [ ] Redo bongo cat using Unicode Braille block art (⠿/⣿ characters) for a high-fidelity animated sprite
+- [ ] Album Artists tab (browse by album artist, distinct from the per-track Artist tab)
+- [ ] Seek bar interaction (click/scrub the progress bar)
+- [ ] Album art → block character / half-block rendering
+- [ ] MPRIS support on Linux (D-Bus via `github.com/godbus/dbus/v5`)
+- [ ] Settings screen (hotkey remapper)
+- [x] On-screen key hints bar (shown by default, toggle off/on with `?`)
+- [x] BPM-driven bongo cat animation with fixed-timestep timer
+- [x] Left/right arrow key pagination through browser lists
+- [x] Synced lyrics display in right pane (`getLyricsBySongId` + `getLyrics` fallback)
+- [x] Vertical bars visualizer, switchable with `v`
+- [x] Enter on song auto-unpauses
+- [x] `a`/`n` enqueue only the highlighted item
+- [x] Auto DJ mode (`r`) — fills queue from `getSimilarSongs` / `getRandomSongs`
+- [x] Play queue persistence via `savePlayQueue` / `getPlayQueue` (syncs with other Subsonic clients)
+- [x] Clear queue with `c`
+- [x] Dynamic progress bar width (fills terminal width)
+- [x] Login screen with ASCII bonsai sakura tree and Japanese subtitle 神楽
+- [x] App renamed to Kagura
