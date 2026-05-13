@@ -1,0 +1,22 @@
+# Compiled binaries
+kagura
+navidrome-tui
+
+# Go build artifacts
+*.test
+*.out
+
+# Python dead code remnants
+*.py
+__pycache__/
+.venv/
+requirements.txt
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
