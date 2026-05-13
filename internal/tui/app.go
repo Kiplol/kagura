@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
+	bpmdetect "github.com/kip/kagura/internal/bpm"
 	"github.com/kip/kagura/internal/config"
 	"github.com/kip/kagura/internal/hotkey"
 	"github.com/kip/kagura/internal/mpv"
@@ -166,6 +168,8 @@ type App struct {
 
 	// Play queue persistence
 	saveTickCount int // incremented each ticker tick; save every ~10 s
+
+	currentBPM int // actual BPM from tag (0 = unknown, drives display)
 }
 
 // Run builds and runs the application. Blocks until quit.
@@ -1015,6 +1019,14 @@ func (a *App) ticker() {
 				bpm = nowSong.BPM
 			}
 			a.mu.Unlock()
+			// Prefer BPM read directly from the file's tags by mpv (most accurate),
+			// fall back to Subsonic metadata, then to 120 BPM default.
+			if a.player != nil {
+				if mpvBPM := a.player.State().BPM; mpvBPM > 0 {
+					bpm = mpvBPM
+				}
+			}
+			a.currentBPM = bpm // 0 = no tag found; shown as "---" in visualizer
 			if bpm > 0 {
 				a.beatInterval = time.Duration(60000/bpm) * time.Millisecond
 			} else {
@@ -1055,6 +1067,31 @@ func (a *App) ticker() {
 							}
 						})
 					}(nowSong.ID, nowSong.Artist, nowSong.Title, nowSong.Album, nowSong.Duration)
+
+					// Detect BPM from the audio stream via aubiotempo (optional).
+					// Runs in the background; result is discarded if the song changed.
+					if a.client != nil {
+						streamURL := a.client.StreamURL(nowSong.ID)
+						go func(id, url string) {
+							detected := bpmdetect.Detect(context.Background(), url)
+							if detected == 0 {
+								return
+							}
+							appLogf("BPM callback fired: detected=%d songID=%q currentSongID=%q",
+								detected, id, a.currentSongID)
+							a.tv.QueueUpdateDraw(func() {
+								appLogf("QueueUpdateDraw: id=%q currentSongID=%q match=%v",
+									id, a.currentSongID, a.currentSongID == id)
+								if a.currentSongID != id {
+									return
+								}
+								a.currentBPM = detected
+								a.beatInterval = time.Duration(60000/detected) * time.Millisecond
+								a.updateVisualizerPanel()
+								appLogf("BPM set to %d, visualizer updated", a.currentBPM)
+							})
+						}(nowSong.ID, streamURL)
+					}
 				}
 			}
 			// Auto DJ: when 2 or fewer songs remain, fetch more.
@@ -1320,10 +1357,7 @@ func (a *App) updateVisualizerPanel() {
 	switch a.visualizerMode {
 	case 0: // DJ dancer
 		playing := a.player != nil && a.player.State().Playing
-		var bpm int
-		if a.beatInterval > 0 {
-			bpm = int(60000 / a.beatInterval.Milliseconds())
-		}
+		bpm := a.currentBPM // 0 = unknown → djFrame shows "---"
 		if !playing {
 			a.catPanel.SetText(djFrame(-1, bpm))
 		} else if a.catPhase%2 == 0 {
@@ -1603,6 +1637,17 @@ func tableCell(text string) *tview.TableCell {
 // setWindowTitle sets the terminal window/tab title using an OSC escape sequence.
 func setWindowTitle(title string) {
 	fmt.Fprintf(os.Stdout, "\033]0;%s\007", title)
+}
+
+// appLogf appends a timestamped line to /tmp/kagura.log (shared with bpm package).
+func appLogf(format string, args ...any) {
+	f, err := os.OpenFile("/tmp/kagura.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	ts := time.Now().Format("15:04:05")
+	fmt.Fprintf(f, "[app %s] "+format+"\n", append([]any{ts}, args...)...)
 }
 
 func progressBar(pos, dur float64, width int) string {

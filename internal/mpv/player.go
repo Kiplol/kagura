@@ -9,6 +9,8 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -25,6 +27,7 @@ type State struct {
 	Title       string
 	Volume      int
 	PlaylistPos int // current index in mpv's playlist (-1 = none)
+	BPM         int // from file metadata tags (0 if not present)
 }
 
 // Player controls mpv over IPC.
@@ -252,9 +255,10 @@ func (p *Player) readEvents() {
 
 		// Events have an "event" key.
 		if event, ok := msg["event"].(string); ok {
-			// When a new track starts, request the updated playlist position.
+			// When a new track starts, request updated playlist position and metadata.
 			if event == "start-file" {
 				_ = p.getProperty("playlist-pos")
+				_ = p.getProperty("metadata")
 			}
 			continue
 		}
@@ -302,6 +306,24 @@ func (p *Player) readEvents() {
 		case "playlist-pos":
 			if v, ok := data.(float64); ok {
 				p.state.PlaylistPos = int(v)
+			}
+		case "metadata":
+			// Extract BPM from file tags. Common keys: BPM, TBPM (ID3), bpm.
+			p.state.BPM = 0
+			if meta, ok := data.(map[string]any); ok {
+				for _, key := range []string{"BPM", "TBPM", "bpm", "tbpm"} {
+					if val, ok := meta[key].(string); ok && val != "" {
+						val = strings.TrimSpace(val)
+						// Handle integer or float BPM strings (e.g. "128" or "128.0")
+						if dot := strings.IndexByte(val, '.'); dot >= 0 {
+							val = val[:dot]
+						}
+						if bpm, err := strconv.Atoi(val); err == nil && bpm > 0 {
+							p.state.BPM = bpm
+							break
+						}
+					}
+				}
 			}
 		}
 		p.stateMu.Unlock()
