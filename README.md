@@ -3,22 +3,24 @@
 A terminal music player for [Navidrome](https://www.navidrome.org/) — browse your library, manage a play queue, and watch a dancing DJ groove to every song, all without leaving the terminal.
 
 ```
-┌─ 1:Artists  2:Albums  3:Songs  4:Playlists  5:Search ─────────────┐
-│ ▸ Jóhann Jóhannsson                        │  ▶ Now Playing       │
-│   Jon Hopkins                              │  1. The Sun's Gone   │
-│   Joep Beving                              │  2. Circles          │
-│   Nils Frahm                               │     Dim              │
-│   Ólafur Arnalds                           │  3. Midnight         │
-│                                            │                      │
-│                                            │  ♪ And I knew then   │
-│                                            │  ♪ the light would   │
-│                                            │  ♪ never fade away   │
-│                                            │  ──────────────────  │
-│                                            │    ∿∿  ∿∿            │
-│                                            │   \(^‿^)/  ♪♫        │
-├────────────────────────────────────────────┴──────────────────────┤
-│ ▶  The Sun's Gone Dim   ████████████░░░░░░░   2:14 / 5:38  80%   │
-└── space:play  j/k:move  enter:play  a:queue  r:dj  v:vis  ?:help ─┘
+┌─ 1:Album Artists  2:Albums  3:Songs  4:Playlists  5:Favorites  6:Search ──┐
+│ ▸ Jóhann Jóhannsson                        │  ▶ Now Playing               │
+│   Jon Hopkins                              │  1. The Sun's Gone Dim        │
+│   Joep Beving                              │  2. Circles                   │
+│   Nils Frahm                               │  3. Midnight                  │
+│   Ólafur Arnalds                           │                               │
+│                                            │  ♪ And I knew then            │
+│                                            │  ♪ the light would            │
+│                                            │  ♪ never fade away            │
+│                                            │  ─────────────────────        │
+│                                            │    ∿∿  ∿∿                     │
+│                                            │   \(^‿^)/  ♪♫                 │
+├────────────────────────────────────────────┴───────────────────────────────┤
+│ ▶  The Sun's Gone Dim   ████████████░░░░░░░   2:14 / 5:38  vol 80%        │
+├────────────────────────────────────────────────────────────────────────────┤
+│  j/k:move  Enter:play  a:add  n:insert  c:clear  Space:⏯  >.:next  <,:prev │
+│  +-:vol  r:autodj  v:vis  ←→:page  1-6:tabs  /:search  ⌫:back  q:quit  ?  │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## What it does
@@ -85,7 +87,7 @@ After that, you land straight in your music library. Your last session is restor
 | `r` | Toggle Auto DJ |
 | `v` | Switch visualizer (dancing DJ ↔ bars) |
 | `←` / `→` | Page through long lists |
-| `1`–`5` | Jump to tab (Artists / Albums / Songs / Playlists / Search) |
+| `1`–`6` | Jump to tab (Album Artists / Albums / Songs / Playlists / Favorites / Search) |
 | `/` | Search |
 | `Backspace` | Go back |
 | `?` | Show / hide key hints |
@@ -93,7 +95,11 @@ After that, you land straight in your music library. Your last session is restor
 
 ## Features
 
-**Browse your library** across Artists, Albums, Songs, and Playlists. Long lists are paginated and your position is remembered.
+**Browse your library** across Album Artists, Albums, Songs, Playlists, and Favorites. Long lists are paginated and your position is remembered.
+
+**Rich artist pages** — drilling into an album artist shows their albums (first 5 + view all), top songs globally, and similar artists you can click right into. Top songs and similar artists are pulled from Last.fm via Navidrome.
+
+**Favorites** — a dedicated tab for your starred artists, albums, and songs from Navidrome.
 
 **Queue management** — add songs one at a time or drop a whole album into the queue at once. Use `n` to cut in line.
 

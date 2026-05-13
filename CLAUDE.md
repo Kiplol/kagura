@@ -108,9 +108,9 @@ compile, the app still runs; hotkeys are silently disabled.
 | `+` / `=` | Volume up (+5%) |
 | `-` | Volume down (-5%) |
 | `r` | Toggle Auto DJ (fills queue with similar/random songs when running low) |
-| `v` | Cycle visualizer (dancing DJ → vertical bars) |
+| `v` | Cycle visualizer (dancing DJ → beat-pulse bars) |
 | `←` / `→` | Page through browser list |
-| `1`–`5` | Switch browser tab (Artists/Albums/Songs/Playlists/Search) |
+| `1`–`6` | Switch browser tab (Album Artists/Albums/Songs/Playlists/Favorites/Search) |
 | `/` | Jump to Search tab |
 | `Backspace` | Go back (drill-down) |
 | `?` | Toggle key hints bar |
@@ -125,38 +125,49 @@ compile, the app still runs; hotkeys are silently disabled.
 
 | Tab | Contents | Drill-down |
 |---|---|---|
-| 1: Artists | All artists (A–Z), paginated | → Albums → Songs |
+| 1: Album Artists | All album artists (A–Z), paginated | → Artist page (albums + top songs + similar artists) → Songs |
 | 2: Albums | All albums (A–Z), paginated | → Songs |
 | 3: Songs | 50 random songs | Play directly |
 | 4: Playlists | All playlists | → Songs |
-| 5: Search | Type + Enter | Results: artists, albums, songs |
+| 5: Favorites | Starred artists, albums, songs (top 5 each + view all) | → full list |
+| 6: Search | Type + Enter | Results: artists, albums, songs |
 
 Lists longer than 50 items are paginated; `←`/`→` move between pages. The breadcrumb
 shows `(page X/Y  ←→)` when more than one page exists.
+
+### Artist page
+Drilling into an album artist shows a rich page fetched in parallel from three endpoints:
+1. **Albums** — first 5 albums with year, plus "View all N albums" if more exist
+2. **Top Songs** — up to 10 most-played tracks globally (via `getTopSongs`, Last.fm-backed)
+3. **Similar Artists** — up to 10 similar artists (via `getArtistInfo2`, Last.fm-backed); clicking any drills into their page
 
 ---
 
 ## Layout
 
 ```
-┌─ tab bar ──────────────────────────────────────────────────────────┐
-│ 1:Artists  2:Albums  3:Songs  4:Playlists  5:Search                │
-├─ breadcrumb ───────────────────────────────────┬─ queue pane ──────┤
-│ Artist Name                                    │  ▶ Now Playing    │
-│                                                │  1. Song A        │
-│  Song list / browser content                   │  2. Song B        │
-│                                                │  3. Song C        │
-│                                                │                   │
-│                                                │  [lyrics]         │
-│                                                │  ─────────────    │
-│                                                │  [dancing DJ]      │
-├─ separator ────────────────────────────────────┴───────────────────┤
-│ ▶  Track Title   ████████████████░░░░   1:23 / 4:56   vol 80%     │
-└─ key hints ────────────────────────────────────────────────────────┘
+┌─ tab bar ──────────────────────────────────────────────────────────────────┐
+│ 1:Album Artists  2:Albums  3:Songs  4:Playlists  5:Favorites  6:Search     │
+├─ breadcrumb ───────────────────────────────────────┬─ queue pane ──────────┤
+│ Artist Name                                        │  ▶ Now Playing        │
+│                                                    │  1. Song A            │
+│  Artist page / album list / song list              │  2. Song B            │
+│                                                    │  3. Song C            │
+│                                                    │                       │
+│                                                    │  [lyrics]             │
+│                                                    │  ─────────────        │
+│                                                    │  [dancing DJ]         │
+├─ separator ────────────────────────────────────────┴───────────────────────┤
+│ ▶  Track Title   ████████████████░░░░   1:23 / 4:56   vol 80%             │
+├────────────────────────────────────────────────────────────────────────────┤
+│  j/k:move  Enter:play  a:add  n:insert  c:clear  Space:⏯  >.:next  <,:prev │
+│  +-:vol  r:autodj  v:vis  ←→:page  1-6:tabs  /:search  ⌫:back  q:quit  ?  │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The right pane (~28 chars wide) shows the queue, synced lyrics (3–5 lines), and
+The right pane (~28 chars wide) shows the queue, synced lyrics (3 lines), and
 the visualizer. The progress bar spans the full terminal width dynamically.
+The key hints bar is 2 lines and can be toggled with `?`.
 
 ---
 
@@ -176,6 +187,10 @@ queue, Kagura fetches 20 similar songs via `getSimilarSongs` (requires Last.fm i
 in Navidrome) and falls back to `getRandomSongs`. Already-queued songs are filtered out.
 The queue header shows `DJ:similar` or `DJ:random` to indicate the source.
 
+### Favorites Tab
+Shows starred artists, albums, and songs from Navidrome. Each section displays up to 5 items
+with a "View all N" drill-down row. Uses the `getStarred2` Subsonic endpoint.
+
 ### Synced Lyrics
 Fetched automatically when a song starts. Three-tier fallback:
 1. `getLyricsBySongId` — OpenSubsonic extension, returns LRC timestamps from Navidrome
@@ -183,9 +198,10 @@ Fetched automatically when a song starts. Three-tier fallback:
 3. lrclib.net — free community lyrics database, no API key required
 
 Displays 3 lines (previous / current / next) in the right pane, highlighted at the current
-position when synced timestamps are available.
+position when synced timestamps are available. Shows "lyrics unavailable" when a song is
+loaded but no lyrics were found from any source.
 
-### BPM Detection & Bongo Cat
+### BPM Detection & Dancing DJ
 BPM is sourced in two ways:
 1. **File metadata tags** — read from `BPM`/`TBPM` tags via mpv on song start (instant)
 2. **Stream analysis** — if no tag is found, `aubiotrack` + `ffmpeg` analyze the first
@@ -195,8 +211,14 @@ The dancing DJ animation runs at the detected BPM. Falls back to 120 BPM if neit
 yields a result. Debug output is logged to `/tmp/kagura.log`.
 
 ### Visualizer
-Press `v` to switch between dancing DJ (ASCII art) and a vertical bars visualizer
-(sin-wave pattern driven by `catPhase`).
+Press `v` to switch between dancing DJ (ASCII art) and beat-pulse bars. The bars visualizer
+peaks on every beat and smoothly decays to 20% before the next beat, using wall-clock time
+since the last beat divided by the beat interval for a smooth animation effect.
+
+### Window Title
+The terminal window title uses a vaporwave decoration:
+- Idle: `▓▓▒▒░░ KAGURA 神楽 ░░▒▒▓▓`
+- Playing: `▓▓▒▒░░ Holocene — Bon Iver ░░▒▒▓▓`
 
 ### UI State Persistence
 The app saves the current tab, page, and scroll row to config whenever they change and
@@ -350,6 +372,11 @@ Additionally, the Homebrew build of aubiotrack lacks HTTP/libav support, so it c
 read audio streams directly. The workaround uses ffmpeg to download the first 30 seconds
 of the stream into a temp WAV file, which aubiotrack then reads locally.
 
+### Next/Prev track — set_property playlist-pos (not playlist-next/prev)
+`playlist-next soft` and `playlist-prev` are mpv commands that don't work reliably with HTTP
+streams even when the playlist has multiple entries. Direct `set_property playlist-pos N` is
+used instead and works correctly.
+
 ---
 
 ## What's Next
@@ -357,19 +384,26 @@ of the stream into a temp WAV file, which aubiotrack then reads locally.
 - [ ] As-you-type search — debounced live results (~250ms), min 2 chars, stale-response guard
 - [ ] Album art → block character / half-block rendering
 - [ ] MPRIS support on Linux (D-Bus via `github.com/godbus/dbus/v5`)
-- [ ] Preferences panel — logout option
-- [ ] Preferences panel — hotkey remapper
+- [ ] Preferences panel — logout option, hotkey remapper
 - [ ] Homebrew formula (or `go install`) for easy installation
-- [ ] Auto DJ enque 5 songs instead of 20
+- [ ] Auto DJ enqueue 5 songs instead of 20
 - [ ] Remove unused code from previous attempts from project
 - [ ] Sort albums by most recently released (or whatever makes sense)
 - [ ] Sometimes DJ type is truncated (`── QUEUE  DJ:… ──`)
 - [ ] Look into some sort of floating HUD if possible (menu bar maybe?)
-- [ ] Shorten 1-5 tabs explanation in key hints
-- [ ] Shorten decoration around song info in window title
 - [ ] Bug: App always opens (or maybe switches) to Album Artists tab, but correct tab remains highlighted
-- [ ] Center the dancing DJ 
-- [ ] Center "lyrics unavailable"
+- [ ] Center the dancing DJ
+- [ ] Kagura should reset the window's title when it quits
+- [ ] Mention that I don't know any Go and Claude wrote all of this in the readme
+- [x] Artist page — albums preview (first 5 + view all), top songs, similar artists
+- [x] Favorites tab — starred artists, albums, songs with view-all drill-down
+- [x] Vaporwave window title decoration (`▓▓▒▒░░ KAGURA 神楽 ░░▒▒▓▓`)
+- [x] "lyrics unavailable" shown when a song has no lyrics from any source
+- [x] Beat-pulse decay bars visualizer (peaks on beat, smooth decay)
+- [x] `[` / `]` seek back / forward 10 seconds
+- [x] Multiline key hints bar (2 rows)
+- [x] 6 tabs: Album Artists, Albums, Songs, Playlists, Favorites, Search
+- [x] Fix: Next/Prev track keys (`.` `>` `,` `<`) — switched to set_property playlist-pos
 - [x] UI state persistence — last tab, page, and scroll row saved across launches
 - [x] Auto DJ state persists across launches
 - [x] lrclib.net as third lyrics fallback (no API key required)
