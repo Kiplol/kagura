@@ -362,6 +362,14 @@ of the stream into a temp WAV file, which aubiotrack then reads locally.
 - [ ] Homebrew formula (or `go install`) for easy installation
 - [ ] Auto DJ enque 5 songs instead of 20
 - [ ] Remove unused code from previous attempts from project
+- [ ] Sort albums by most recently released (or whatever makes sense)
+- [ ] Sometimes DJ type is truncated (`── QUEUE  DJ:… ──`)
+- [ ] Look into some sort of floating HUD if possible (menu bar maybe?)
+- [ ] Shorten 1-5 tabs explanation in key hints
+- [ ] Shorten decoration around song info in window title
+- [ ] Bug: App always opens (or maybe switches) to Album Artists tab, but correct tab remains highlighted
+- [ ] Center the dancing DJ 
+- [ ] Center "lyrics unavailable"
 - [x] UI state persistence — last tab, page, and scroll row saved across launches
 - [x] Auto DJ state persists across launches
 - [x] lrclib.net as third lyrics fallback (no API key required)
