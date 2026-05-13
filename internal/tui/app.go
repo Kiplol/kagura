@@ -31,7 +31,7 @@ const (
 	tabSearch       = 5
 )
 
-var tabNames = [6]string{"Album Artists", "Albums", "Songs", "Playlists", "Favorites", "Search"}
+var tabNames = [6]string{"Album Artists", "Albums", "New", "Playlists", "Favorites", "Search"}
 
 // starredAllEntry is used as the data field for "show N more" rows in the
 // Favorites tab. Selecting it drills into the full list.
@@ -68,23 +68,23 @@ func djFrame(pose, bpm int) string {
 	}
 	switch pose {
 	case 0:
-		return "  [yellow]♪[-]  [yellow]♫[-]  [yellow]♪[-]\n" +
-			" [white]┏[gray](･o･)[white]┛[-]\n" +
-			"  [gray]( DJ~ )[-]\n" +
-			"  [gray]└─────┘[-]\n" +
-			"  " + bpmStr
+		return "[yellow]♪[-]  [yellow]♫[-]  [yellow]♪[-]\n" +
+			"[white]┏[gray](･o･)[white]┛[-]\n" +
+			"[gray]( DJ~ )[-]\n" +
+			"[gray]└─────┘[-]\n" +
+			bpmStr
 	case 1:
-		return "  [yellow]♪[-]  [yellow]♫[-]  [yellow]♪[-]\n" +
-			" [white]┗[gray](･o･)[white]┓[-]\n" +
-			"  [gray]( ~DJ )[-]\n" +
-			"  [gray]└─────┘[-]\n" +
-			"  " + bpmStr
+		return "[yellow]♪[-]  [yellow]♫[-]  [yellow]♪[-]\n" +
+			"[white]┗[gray](･o･)[white]┓[-]\n" +
+			"[gray]( ~DJ )[-]\n" +
+			"[gray]└─────┘[-]\n" +
+			bpmStr
 	default: // idle
 		return "\n" +
-			"  [gray](･o･)[-]\n" +
-			"  [gray]( DJ  )[-]\n" +
-			"  [gray]└─────┘[-]\n" +
-			"  " + bpmStr
+			"[gray](･o･)[-]\n" +
+			"[gray]( DJ  )[-]\n" +
+			"[gray]└─────┘[-]\n" +
+			bpmStr
 	}
 }
 
@@ -215,7 +215,6 @@ func (a *App) run() error {
 		a.initClient()
 		a.buildMainPage()
 		a.pages.SwitchToPage("main")
-		go a.fetchTab(tabArtists)
 	}
 
 	go a.ticker()
@@ -270,7 +269,6 @@ func (a *App) buildLoginPage() {
 				a.initClient()
 				a.buildMainPage()
 				a.pages.SwitchToPage("main")
-				go a.fetchTab(tabArtists)
 			})
 		}()
 	})
@@ -367,7 +365,7 @@ func (a *App) buildMainPage() {
 	a.lyricsPanel.SetBackgroundColor(tcell.ColorDefault)
 
 	// --- Visualizer panel (right side, bottom) ---
-	a.catPanel = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	a.catPanel = tview.NewTextView().SetDynamicColors(true).SetWrap(false).SetTextAlign(tview.AlignCenter)
 	a.catPanel.SetBackgroundColor(tcell.ColorDefault)
 	a.updateVisualizerPanel()
 
@@ -456,30 +454,21 @@ func (a *App) buildMainPage() {
 // fetchTabAndRestore loads a tab then restores the saved page and row.
 // Used on startup to return the user to where they were.
 func (a *App) fetchTabAndRestore(tab, page, row int) {
+	// Set the active tab and update the tab bar highlight before fetching content,
+	// so the UI shows the correct tab highlighted immediately on launch.
+	a.tv.QueueUpdateDraw(func() {
+		a.tab = tab
+		a.updateTabBar()
+	})
 	a.fetchTab(tab)
-	if page == 0 && row == 0 {
+	if row == 0 {
 		return
 	}
 	a.tv.QueueUpdateDraw(func() {
-		if len(a.allItems) == 0 {
+		if row >= a.list.GetRowCount() {
 			return
 		}
-		totalPages := (len(a.allItems) + pageSize - 1) / pageSize
-		if page >= totalPages {
-			page = 0
-		}
-		a.pageNum = page
-		a.applyPage()
-		// Clamp row to the visible page.
-		pageRows := pageSize
-		if page == totalPages-1 {
-			pageRows = len(a.allItems) - page*pageSize
-		}
-		if row >= pageRows {
-			row = 0
-		}
 		a.list.Select(row, 0)
-		a.list.ScrollToBeginning()
 	})
 }
 
@@ -517,17 +506,17 @@ func (a *App) fetchTab(tab int) {
 
 	case tabSongs:
 		a.tv.QueueUpdateDraw(func() { a.restoreListFlex(); a.setLoading() })
-		songs, err := a.client.GetRandomSongs(50)
+		albums, err := a.client.GetNewestAlbums(50)
 		a.tv.QueueUpdateDraw(func() {
 			if err != nil {
 				a.showError(err)
 				return
 			}
-			items := make([]listItem, len(songs))
-			for i, s := range songs {
-				items[i] = listItem{label: dimSongLabel(s.Title, s.Artist, 0), data: s}
+			items := make([]listItem, len(albums))
+			for i, al := range albums {
+				items[i] = listItem{label: dimArtistLabel(al.Name, al.Artist), data: al}
 			}
-			a.setItems(items, "Random Songs")
+			a.setItems(items, "Recently Added")
 		})
 
 	case tabPlaylists:
@@ -1116,22 +1105,27 @@ func (a *App) handleKey(event *tcell.EventKey) *tcell.EventKey {
 		}
 
 	case tcell.KeyLeft:
-		if a.tv.GetFocus() != a.searchInput && a.pageNum > 0 {
-			a.pageNum--
-			a.applyPage()
+		if a.tv.GetFocus() != a.searchInput {
+			row, _ := a.list.GetSelection()
+			target := row - 30
+			if target < 0 {
+				target = 0
+			}
+			a.list.Select(target, 0)
 			a.saveUIState()
 			return nil
 		}
 
 	case tcell.KeyRight:
 		if a.tv.GetFocus() != a.searchInput {
-			totalPages := (len(a.allItems) + pageSize - 1) / pageSize
-			if a.pageNum < totalPages-1 {
-				a.pageNum++
-				a.applyPage()
-				a.saveUIState()
-				return nil
+			row, _ := a.list.GetSelection()
+			target := row + 30
+			if target >= a.list.GetRowCount() {
+				target = a.list.GetRowCount() - 1
 			}
+			a.list.Select(target, 0)
+			a.saveUIState()
+			return nil
 		}
 
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
@@ -1337,10 +1331,10 @@ func (a *App) ticker() {
 				if qLen > 0 && idx >= qLen-2 {
 					a.autoDJFetching = true
 					go func(id string) {
-						songs, err := a.client.GetSimilarSongs(id, 20)
+						songs, err := a.client.GetSimilarSongs(id, 5)
 						source := "similar"
 						if err != nil || len(songs) == 0 {
-							songs, _ = a.client.GetRandomSongs(20)
+							songs, _ = a.client.GetRandomSongs(5)
 							source = "random"
 						}
 						a.tv.QueueUpdateDraw(func() {
@@ -1488,9 +1482,10 @@ func (a *App) updateQueuePanel() {
 	if a.autoDJ {
 		src := a.autoDJSource
 		if src == "" {
-			src = "…"
+			sb.WriteString("[green]── QUEUE  DJ ──[-]\n")
+		} else {
+			sb.WriteString(fmt.Sprintf("[green]── QUEUE  DJ:%s ──[-]\n", src))
 		}
-		sb.WriteString(fmt.Sprintf("[green]── QUEUE  DJ:%s ──[-]\n", src))
 	} else {
 		sb.WriteString("[gray]── QUEUE ──[-]\n")
 	}
@@ -1668,17 +1663,10 @@ func (a *App) setItems(items []listItem, bread string) {
 	a.applyPage()
 }
 
-// applyPage slices allItems for the current page and refreshes the list and breadcrumb.
+// applyPage refreshes the list from allItems and updates the breadcrumb.
+// All items are shown at once; ←/→ scroll the cursor by 30 rows.
 func (a *App) applyPage() {
-	start := a.pageNum * pageSize
-	end := start + pageSize
-	if start > len(a.allItems) {
-		start = len(a.allItems)
-	}
-	if end > len(a.allItems) {
-		end = len(a.allItems)
-	}
-	a.currentItems = a.allItems[start:end]
+	a.currentItems = a.allItems
 
 	a.list.Clear()
 	for i, it := range a.currentItems {
@@ -1689,13 +1677,7 @@ func (a *App) applyPage() {
 		a.list.ScrollToBeginning()
 	}
 
-	totalPages := (len(a.allItems) + pageSize - 1) / pageSize
-	if totalPages > 1 {
-		a.breadcrumb.SetText(fmt.Sprintf("%s  [gray](page %d/%d  ←→)[-]",
-			a.breadText, a.pageNum+1, totalPages))
-	} else {
-		a.breadcrumb.SetText(a.breadText)
-	}
+	a.breadcrumb.SetText(a.breadText)
 }
 
 func (a *App) setLoading() {
@@ -1854,7 +1836,7 @@ func (a *App) cleanup() {
 		}
 		_ = a.client.SavePlayQueue(ids, currentID, posMs)
 	}
-	setWindowTitle("")
+	fmt.Fprintf(os.Stdout, "\033]0;\007") // clear terminal title on quit
 	if a.player != nil {
 		a.player.Close()
 	}

@@ -270,6 +270,29 @@ func (c *Client) Search(query string) ([]Artist, []Album, []Song, error) {
 	return r.Artist, r.Album, r.Song, nil
 }
 
+// GetNewestAlbums returns up to size albums sorted by date added (newest first).
+func (c *Client) GetNewestAlbums(size int) ([]Album, error) {
+	params := url.Values{
+		"type": {"newest"},
+		"size": {strconv.Itoa(size)},
+	}
+	data, err := c.get("getAlbumList2", params)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Response struct {
+			AlbumList2 struct {
+				Album []Album `json:"album"`
+			} `json:"albumList2"`
+		} `json:"subsonic-response"`
+	}
+	if err := json.Unmarshal(data, &wrapper); err != nil {
+		return nil, err
+	}
+	return wrapper.Response.AlbumList2.Album, nil
+}
+
 // GetAlbumList returns up to size albums sorted alphabetically by name.
 func (c *Client) GetAlbumList(size int) ([]Album, error) {
 	params := url.Values{

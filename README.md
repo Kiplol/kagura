@@ -123,6 +123,10 @@ After that, you land straight in your music library. Your last session is restor
 
 **Debug log** — if something isn't working, check `/tmp/kagura.log` for detailed output.
 
+## A note on authorship
+
+I don't know Go. This entire project was written with [Claude](https://claude.ai/) in Cowork mode — I described what I wanted, Claude wrote the code, and I tested it. It's been a wild ride.
+
 ## License
 
 MIT
