@@ -28,8 +28,11 @@ Navidrome ASCII Client/
 │   └── main.go                        # Entry point — calls tui.Run(cfg)
 ├── internal/
 │   ├── config/config.go               # Load/save JSON config
-│   ├── subsonic/client.go             # Subsonic REST API client (token auth)
+│   ├── subsonic/
+│   │   ├── client.go                  # Subsonic REST API client (token auth)
+│   │   └── lrclib.go                  # lrclib.net lyrics fallback (no auth required)
 │   ├── mpv/player.go                  # mpv IPC wrapper (Unix socket)
+│   ├── bpm/detect.go                  # BPM detection via aubiotrack + ffmpeg
 │   ├── hotkey/
 │   │   ├── daemon.go                  # Hotkey daemon — routes commands to app
 │   │   ├── media_keys_darwin.go       # macOS MPRemoteCommandCenter (CGo)
@@ -46,13 +49,15 @@ Navidrome ASCII Client/
 - `Run(cfg)` entry point
 - Login screen (`buildLoginPage`) — ASCII bonsai sakura tree art
 - Main screen (`buildMainPage`) — browser on the left, queue+visualizer panel on the right
-- Tab fetching goroutines (`fetchTab`, `fetchSearch`)
+- Tab fetching goroutines (`fetchTab`, `fetchSearch`, `fetchTabAndRestore`)
 - Selection/navigation (`handleSelect`, `pushNav`, `popNav`)
 - Queue management (`enqueue`, `enqueueSelected`, `replaceQueueFrom`, `clearQueue`)
 - Play queue persistence (`savePlayQueue`, `loadPlayQueue`)
 - Key handling (`handleKey`)
 - Hotkey bridge (`handleHotkeyCmd`)
 - Now-playing ticker (`ticker`)
+- Beat ticker (`startBeatTicker`) — dedicated goroutine driving bongo cat animation
+- UI state persistence (`saveUIState`) — saves tab/page/row to config
 - UI helpers (`updateTabBar`, `updateNowBar`, `updateQueuePanel`, `updateLyricsPanel`, `updateVisualizerPanel`, `setItems`, …)
 
 ---
@@ -65,6 +70,9 @@ cd "Navidrome ASCII Client"
 # First time — install mpv (required for audio)
 brew install mpv
 
+# Optional — install for BPM detection from audio stream
+brew install aubio ffmpeg
+
 # Build
 go build ./cmd/kagura
 
@@ -74,7 +82,8 @@ go build ./cmd/kagura
 
 On first launch the login screen appears. Credentials are saved to
 `~/.config/kagura/config.json`; subsequent launches go straight to the browser
-with the previously saved queue restored (paused at the last position).
+with the previously saved queue restored (paused at the last position) and the
+last-used tab/page/scroll row restored.
 
 macOS media keys work automatically (CGo + system frameworks). If the Objective-C layer fails to
 compile, the app still runs; hotkeys are silently disabled.
@@ -160,24 +169,36 @@ The queue is synced with Navidrome's `savePlayQueue` / `getPlayQueue` Subsonic e
 - Cross-client: the saved queue is visible from any Subsonic client (Feishin, etc.)
 
 ### Auto DJ
-Press `r` to toggle. When 2 or fewer songs remain in the queue, Kagura fetches 20
-similar songs via `getSimilarSongs` (requires Last.fm integration in Navidrome) and
-falls back to `getRandomSongs`. Already-queued songs are filtered out. The queue
-header shows `DJ:similar` or `DJ:random` to indicate the source.
+Press `r` to toggle (state persists across launches). When 2 or fewer songs remain in the
+queue, Kagura fetches 20 similar songs via `getSimilarSongs` (requires Last.fm integration
+in Navidrome) and falls back to `getRandomSongs`. Already-queued songs are filtered out.
+The queue header shows `DJ:similar` or `DJ:random` to indicate the source.
 
 ### Synced Lyrics
-Fetched automatically when a song starts. Uses `getLyricsBySongId` (OpenSubsonic,
-returns LRC timestamps) with `getLyrics` (plain text) as fallback. Displays 3 lines
-(previous / current / next) in the right pane, highlighted at the current position.
+Fetched automatically when a song starts. Three-tier fallback:
+1. `getLyricsBySongId` — OpenSubsonic extension, returns LRC timestamps from Navidrome
+2. `getLyrics` — plain text fallback via Subsonic API
+3. lrclib.net — free community lyrics database, no API key required
 
-### BPM-Driven Bongo Cat
-The bongo cat animation advances at the song's BPM (from track metadata). Uses a
-fixed-timestep accumulator (`lastBeat = lastBeat.Add(interval)`) to prevent drift.
-Falls back to 120 BPM when no BPM metadata is present.
+Displays 3 lines (previous / current / next) in the right pane, highlighted at the current
+position when synced timestamps are available.
+
+### BPM Detection & Bongo Cat
+BPM is sourced in two ways:
+1. **File metadata tags** — read from `BPM`/`TBPM` tags via mpv on song start (instant)
+2. **Stream analysis** — if no tag is found, `aubiotrack` + `ffmpeg` analyze the first
+   30 seconds of the audio stream in the background (requires `brew install aubio ffmpeg`)
+
+The bongo cat animation runs at the detected BPM. Falls back to 120 BPM if neither source
+yields a result. Debug output is logged to `/tmp/kagura.log`.
 
 ### Visualizer
 Press `v` to switch between bongo cat (ASCII art) and a vertical bars visualizer
 (sin-wave pattern driven by `catPhase`).
+
+### UI State Persistence
+The app saves the current tab, page, and scroll row to config whenever they change and
+every ~10 seconds. On next launch, the same tab/page/position is restored.
 
 ---
 
@@ -296,16 +317,36 @@ next (`n` key), the full mpv playlist is rebuilt in the correct order via `LoadP
 seeks back to the saved position in the currently playing song. Plain append (`a`) still just
 appends since that's always correct.
 
-### Fixed-timestep beat timer
-To prevent the bongo cat animation from drifting or doubling up, the beat timer uses an accumulator:
+### Dedicated beat ticker goroutine
+The bongo cat animation runs in its own goroutine (`startBeatTicker`) rather than being driven
+by the main 500ms polling ticker. This ensures every animation frame has an equal duration.
+
+The goroutine is restartable: calling `startBeatTicker()` closes the previous goroutine's stop
+channel (`beatStop`) before launching a new one. This is used when the BPM changes mid-song
+(e.g. when aubio reports a result after the initial metadata read).
+
+Two separate values track BPM state:
+- `a.currentBPM` — the authoritative BPM for the current song (set once per song, never
+  overwritten by the polling ticker)
+- `a.beatInterval` — the derived tick duration, updated whenever `currentBPM` changes
+
+This separation prevents the polling ticker from accidentally resetting the aubio-detected BPM
+back to the file-tag value (or 0) on every 500ms tick.
 
 ```go
+// Fixed-timestep advance — never snap baseline to now
 a.lastBeat = a.lastBeat.Add(interval) // NOT: a.lastBeat = now
 ```
 
-Using `now` would snap the timer baseline forward on each tick, causing two rapid beats whenever
-a ticker fired slightly late. The accumulator advances by exactly one interval regardless of when
-the tick actually fired.
+### BPM detection — aubiotrack PATH workaround
+The Homebrew-installed `aubiotrack` binary is not in the process PATH (apps launched from a
+desktop environment don't inherit the shell's PATH). `internal/bpm/detect.go` searches
+explicit Homebrew prefix paths (`/opt/homebrew/bin/`, `/usr/local/bin/`, `/opt/local/bin/`)
+in addition to `exec.LookPath`.
+
+Additionally, the Homebrew build of aubiotrack lacks HTTP/libav support, so it cannot
+read audio streams directly. The workaround uses ffmpeg to download the first 30 seconds
+of the stream into a temp WAV file, which aubiotrack then reads locally.
 
 ---
 
@@ -317,8 +358,14 @@ the tick actually fired.
 - [ ] Album art → block character / half-block rendering
 - [ ] MPRIS support on Linux (D-Bus via `github.com/godbus/dbus/v5`)
 - [ ] Settings screen (hotkey remapper)
+- [ ] `go install` / Homebrew formula for easy installation
+- [x] UI state persistence — last tab, page, and scroll row saved across launches
+- [x] Auto DJ state persists across launches
+- [x] lrclib.net as third lyrics fallback (no API key required)
+- [x] BPM detection via aubiotrack + ffmpeg when file has no BPM tag
+- [x] Dedicated beat ticker goroutine — all animation frames equal length, no drift
 - [x] On-screen key hints bar (shown by default, toggle off/on with `?`)
-- [x] BPM-driven bongo cat animation with fixed-timestep timer
+- [x] BPM-driven bongo cat animation
 - [x] Left/right arrow key pagination through browser lists
 - [x] Synced lyrics display in right pane (`getLyricsBySongId` + `getLyrics` fallback)
 - [x] Vertical bars visualizer, switchable with `v`
