@@ -153,12 +153,21 @@ func (p *Player) Play() error {
 
 // Next skips to the next track in the playlist.
 func (p *Player) Next() error {
-	return p.command("playlist-next", "soft")
+	p.stateMu.RLock()
+	pos := p.state.PlaylistPos
+	p.stateMu.RUnlock()
+	return p.setProperty("playlist-pos", pos+1)
 }
 
 // Prev skips to the previous track.
 func (p *Player) Prev() error {
-	return p.command("playlist-prev", "soft")
+	p.stateMu.RLock()
+	pos := p.state.PlaylistPos
+	p.stateMu.RUnlock()
+	if pos <= 0 {
+		return nil
+	}
+	return p.setProperty("playlist-pos", pos-1)
 }
 
 // Seek seeks to an absolute position in seconds.
