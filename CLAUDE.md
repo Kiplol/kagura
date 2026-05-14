@@ -384,7 +384,8 @@ used instead and works correctly.
 - [ ] As-you-type search — debounced live results (~250ms), min 2 chars, stale-response guard
 - [ ] Album art → block character / half-block rendering
 - [ ] MPRIS support on Linux (D-Bus via `github.com/godbus/dbus/v5`)
-- [ ] Preferences panel — logout option, hotkey remapper
+- [ ] Preferences panel — hotkey remapper
+- [x] Preferences panel — logout option (`p` key)
 - [x] Homebrew formula (or `go install`) for easy installation
 - [x] Sort artist page albums by release year (newest first)
 - [x] Auto DJ enqueue 5 songs instead of 20

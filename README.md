@@ -94,6 +94,7 @@ After that, you land straight in your music library. Your last session is restor
 | `/` | Search |
 | `Backspace` | Go back |
 | `?` | Show / hide key hints |
+| `p` | Preferences (logout) |
 | `q` | Quit |
 
 ## Features

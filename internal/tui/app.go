@@ -251,7 +251,9 @@ func (a *App) buildLoginPage() {
 	form.AddInputField("Server URL", serverURL, 36, nil, func(v string) { serverURL = v })
 	form.AddInputField("Username  ", username, 36, nil, func(v string) { username = v })
 	form.AddPasswordField("Password  ", password, 36, '*', func(v string) { password = v })
-	form.AddButton("Login", func() {
+
+	var doLogin func()
+	doLogin = func() {
 		if serverURL == "" || username == "" || password == "" {
 			status.SetText("[red]All fields required.[-]")
 			return
@@ -272,7 +274,21 @@ func (a *App) buildLoginPage() {
 				a.pages.SwitchToPage("main")
 			})
 		}()
-	})
+	}
+
+	// Make Enter on the password field (last field) submit the form directly,
+	// so the user doesn't have to Tab to the Login button.
+	if pwField, ok := form.GetFormItem(2).(*tview.InputField); ok {
+		pwField.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+			if event.Key() == tcell.KeyEnter {
+				doLogin()
+				return nil
+			}
+			return event
+		})
+	}
+
+	form.AddButton("Login", doLogin)
 	form.SetCancelFunc(func() { a.tv.Stop() })
 
 	newBox := func() *tview.Box {
@@ -416,7 +432,7 @@ func (a *App) buildMainPage() {
 	a.hintsBar.SetBackgroundColor(tcell.ColorBlack)
 	a.hintsBar.SetText(
 		"[gray]  j/k:move  Enter:play  a:add  n:insert  c:clear  Space:⏯  >.:next  <,:prev  []:seek[-]\n" +
-			"[gray]  +-:vol  r:autodj  v:vis  ←→:page  1:artists  2:albums  3:songs  4:playlists  5:favs  /:search  ⌫:back  q:quit  ?:close[-]")
+			"[gray]  +-:vol  r:autodj  v:vis  ←→:page  1-6:tabs  /:search  ⌫:back  p:prefs  q:quit  ?:close[-]")
 
 	// Root layout (vertical flex) — hintsBar shown by default, toggled with ?
 	a.showHints = true
@@ -1074,6 +1090,9 @@ func (a *App) handleKey(event *tcell.EventKey) *tcell.EventKey {
 		case '/':
 			a.switchTab(tabSearch)
 			return nil
+		case 'p':
+			a.showPreferences()
+			return nil
 		case '1':
 			a.switchTab(tabArtists)
 			return nil
@@ -1168,6 +1187,9 @@ func (a *App) switchTab(tab int) {
 // saveUIState persists the current tab, page, and selected row to config.
 // Called on page turn and periodically from the ticker.
 func (a *App) saveUIState() {
+	if a.list == nil {
+		return
+	}
 	row, _ := a.list.GetSelection()
 	if a.cfg.LastTab == a.tab && a.cfg.LastPage == a.pageNum && a.cfg.LastRow == row {
 		return // nothing changed
@@ -1814,6 +1836,49 @@ func (a *App) clearQueue() {
 }
 
 // ---------------------------------------------------------------------------
+
+func (a *App) showPreferences() {
+	modal := tview.NewModal().
+		SetText("Preferences").
+		AddButtons([]string{"Logout", "Cancel"}).
+		SetDoneFunc(func(_ int, label string) {
+			a.pages.RemovePage("prefs")
+			if label == "Logout" {
+				a.logout()
+			}
+		})
+	a.pages.AddPage("prefs", modal, true, true)
+}
+
+func (a *App) logout() {
+	// Stop beat ticker.
+	if a.beatStop != nil {
+		close(a.beatStop)
+		a.beatStop = nil
+	}
+	// Stop player and hotkey daemon.
+	if a.player != nil {
+		a.player.Close()
+		a.player = nil
+	}
+	if a.hkDaemon != nil {
+		a.hkDaemon.Stop()
+		a.hkDaemon = nil
+	}
+	// Clear credentials and save.
+	a.cfg.Server = config.Server{}
+	_ = config.Save(a.cfg)
+	// Reset playback state.
+	a.mu.Lock()
+	a.queue = nil
+	a.queueIdx = 0
+	a.mu.Unlock()
+	a.client = nil
+	// Tear down the main page and show the login screen.
+	a.pages.RemovePage("main")
+	a.buildLoginPage()
+	a.pages.SwitchToPage("login")
+}
 
 func (a *App) cleanup() {
 	// Stop the beat ticker goroutine.
