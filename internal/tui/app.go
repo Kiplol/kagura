@@ -1005,6 +1005,10 @@ func (a *App) enqueueSelected(insertNext bool) {
 // ---------------------------------------------------------------------------
 
 func (a *App) handleKey(event *tcell.EventKey) *tcell.EventKey {
+	// Don't intercept anything while the login screen is showing.
+	if a.list == nil {
+		return event
+	}
 	if a.tv.GetFocus() == a.searchInput {
 		return event // let search input handle its own keys
 	}
@@ -1838,15 +1842,30 @@ func (a *App) clearQueue() {
 // ---------------------------------------------------------------------------
 
 func (a *App) showPreferences() {
+	dismiss := func() {
+		a.pages.RemovePage("prefs")
+		a.tv.SetFocus(a.list)
+	}
 	modal := tview.NewModal().
-		SetText("Preferences").
-		AddButtons([]string{"Logout", "Cancel"}).
+		SetText("Preferences\n\nTab · switch button    Enter · confirm    Esc · close").
+		AddButtons([]string{"Cancel", "Logout"}).
 		SetDoneFunc(func(_ int, label string) {
-			a.pages.RemovePage("prefs")
+			dismiss()
 			if label == "Logout" {
 				a.logout()
 			}
 		})
+	// Make buttons visually distinct: navy bg / white text; focused → inverted.
+	modal.SetButtonBackgroundColor(tcell.ColorNavy)
+	modal.SetButtonTextColor(tcell.ColorWhite)
+	// Escape closes without action.
+	modal.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEscape {
+			dismiss()
+			return nil
+		}
+		return event
+	})
 	a.pages.AddPage("prefs", modal, true, true)
 }
 
