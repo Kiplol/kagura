@@ -183,7 +183,7 @@ The queue is synced with Navidrome's `savePlayQueue` / `getPlayQueue` Subsonic e
 
 ### Auto DJ
 Press `r` to toggle (state persists across launches). When 2 or fewer songs remain in the
-queue, Kagura fetches 20 similar songs via `getSimilarSongs` (requires Last.fm integration
+queue, Kagura fetches 5 similar songs via `getSimilarSongs` (requires Last.fm integration
 in Navidrome) and falls back to `getRandomSongs`. Already-queued songs are filtered out.
 The queue header shows `DJ:similar` or `DJ:random` to indicate the source.
 
@@ -385,16 +385,15 @@ used instead and works correctly.
 - [ ] Album art → block character / half-block rendering
 - [ ] MPRIS support on Linux (D-Bus via `github.com/godbus/dbus/v5`)
 - [ ] Preferences panel — logout option, hotkey remapper
-- [ ] Homebrew formula (or `go install`) for easy installation
-- [ ] Auto DJ enqueue 5 songs instead of 20
-- [ ] Remove unused code from previous attempts from project
-- [ ] Sort albums by most recently released (or whatever makes sense)
-- [ ] Sometimes DJ type is truncated (`── QUEUE  DJ:… ──`)
-- [ ] Look into some sort of floating HUD if possible (menu bar maybe?)
-- [ ] Bug: App always opens (or maybe switches) to Album Artists tab, but correct tab remains highlighted
-- [ ] Center the dancing DJ
-- [ ] Kagura should reset the window's title when it quits
-- [ ] Mention that I don't know any Go and Claude wrote all of this in the readme
+- [x] Homebrew formula (or `go install`) for easy installation
+- [x] Sort artist page albums by release year (newest first)
+- [x] Auto DJ enqueue 5 songs instead of 20
+- [x] Remove unused/stray files from project root
+- [x] Sometimes DJ type is truncated (`── QUEUE  DJ:… ──`)
+- [x] Bug: App always opens (or maybe switches) to Album Artists tab, but correct tab remains highlighted
+- [x] Center the dancing DJ
+- [x] Kagura should reset the window's title when it quits
+- [x] Mention that I don't know any Go and Claude wrote all of this in the readme
 - [x] Artist page — albums preview (first 5 + view all), top songs, similar artists
 - [x] Favorites tab — starred artists, albums, songs with view-all drill-down
 - [x] Vaporwave window title decoration (`▓▓▒▒░░ KAGURA 神楽 ░░▒▒▓▓`)

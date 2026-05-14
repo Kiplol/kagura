@@ -46,7 +46,10 @@ brew install aubio ffmpeg
 
 ### Homebrew (easiest)
 
-Coming soon.
+```bash
+brew tap kiplol/kagura
+brew install kagura
+```
 
 ### Build from source
 
@@ -86,8 +89,8 @@ After that, you land straight in your music library. Your last session is restor
 | `+` / `-` | Volume up / down |
 | `r` | Toggle Auto DJ |
 | `v` | Switch visualizer (dancing DJ ↔ bars) |
-| `←` / `→` | Page through long lists |
-| `1`–`6` | Jump to tab (Album Artists / Albums / Songs / Playlists / Favorites / Search) |
+| `←` / `→` | Jump 30 rows up / down in long lists |
+| `1`–`6` | Switch tabs |
 | `/` | Search |
 | `Backspace` | Go back |
 | `?` | Show / hide key hints |

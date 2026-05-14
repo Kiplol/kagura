@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -699,6 +700,11 @@ func (a *App) handleSelect(row int) {
 			albums := <-albumsCh
 			songs := <-songsCh
 			similar := <-similarCh
+
+			// Sort albums newest-first by release year.
+			sort.Slice(albums, func(i, j int) bool {
+				return albums[i].Year > albums[j].Year
+			})
 
 			a.tv.QueueUpdateDraw(func() {
 				var items []listItem
