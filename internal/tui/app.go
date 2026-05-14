@@ -223,7 +223,10 @@ func (a *App) run() error {
 	}
 
 	go a.ticker()
-	return a.tv.Run()
+	err := a.tv.Run()
+	// Clear the window title after tview releases the terminal.
+	fmt.Fprintf(os.Stdout, "\033]0;\007")
+	return err
 }
 
 // ---------------------------------------------------------------------------
@@ -1977,7 +1980,6 @@ func (a *App) cleanup() {
 		}
 		_ = a.client.SavePlayQueue(ids, currentID, posMs)
 	}
-	fmt.Fprintf(os.Stdout, "\033]0;\007") // clear terminal title on quit
 	if a.player != nil {
 		a.player.Close()
 	}
