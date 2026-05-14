@@ -180,6 +180,10 @@ type App struct {
 	saveTickCount int // incremented each ticker tick; save every ~10 s
 
 	currentBPM int // actual BPM from tag (0 = unknown, drives display)
+
+	// As-you-type search debounce
+	searchTimer *time.Timer
+	searchSeq   uint64 // incremented each launch; stale goroutines bail early
 }
 
 // Run builds and runs the application. Blocks until quit.
@@ -356,11 +360,38 @@ func (a *App) buildMainPage() {
 		SetFieldBackgroundColor(tcell.ColorBlack).
 		SetFieldTextColor(tcell.ColorDefault)
 	a.searchInput.SetBackgroundColor(tcell.ColorDefault)
+
+	// SetChangedFunc fires on the tview main goroutine — update UI directly,
+	// no QueueUpdateDraw. time.AfterFunc fires on a separate goroutine, so
+	// QueueUpdateDraw is safe from inside the debounce callback.
+	a.searchInput.SetChangedFunc(func(text string) {
+		if a.searchTimer != nil {
+			a.searchTimer.Stop()
+		}
+		if len([]rune(text)) < 2 {
+			a.list.Clear()
+			a.currentItems = nil
+			a.breadcrumb.SetText("[gray]type to search[-]")
+			return
+		}
+		a.breadcrumb.SetText("[gray]searching…[-]")
+		a.searchSeq++
+		seq := a.searchSeq
+		a.searchTimer = time.AfterFunc(250*time.Millisecond, func() {
+			go a.fetchSearchDebounced(text, seq)
+		})
+	})
+
 	a.searchInput.SetDoneFunc(func(key tcell.Key) {
 		switch key {
 		case tcell.KeyEnter:
+			if a.searchTimer != nil {
+				a.searchTimer.Stop()
+			}
 			if q := a.searchInput.GetText(); q != "" {
-				go a.fetchSearch(q)
+				a.searchSeq++
+				seq := a.searchSeq
+				go a.fetchSearchDebounced(q, seq)
 			}
 			a.tv.SetFocus(a.list)
 		case tcell.KeyEscape:
@@ -626,7 +657,7 @@ func (a *App) fetchTab(tab int) {
 			a.contentFlex.AddItem(a.list, 0, 1, false)
 			a.list.Clear()
 			a.currentItems = nil
-			a.breadcrumb.SetText("[gray]type and press Enter to search[-]")
+			a.breadcrumb.SetText("[gray]type to search[-]")
 			a.tv.SetFocus(a.searchInput)
 		})
 	}
@@ -634,8 +665,16 @@ func (a *App) fetchTab(tab int) {
 
 
 func (a *App) fetchSearch(query string) {
+	a.searchSeq++
+	go a.fetchSearchDebounced(query, a.searchSeq)
+}
+
+func (a *App) fetchSearchDebounced(query string, seq uint64) {
 	artists, albums, songs, err := a.client.Search(query)
 	a.tv.QueueUpdateDraw(func() {
+		if seq != a.searchSeq {
+			return // stale — a newer search is already in flight
+		}
 		if err != nil {
 			a.showError(err)
 			return
@@ -663,7 +702,6 @@ func (a *App) fetchSearch(query string) {
 			items = []listItem{{label: "No results"}}
 		}
 		a.setItems(items, fmt.Sprintf("Results: %q", query))
-		a.tv.SetFocus(a.list)
 	})
 }
 
