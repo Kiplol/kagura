@@ -1,8 +1,8 @@
 class Kagura < Formula
   desc "Terminal music player for Navidrome with a dancing DJ visualizer"
   homepage "https://github.com/Kiplol/kagura"
-  url "https://github.com/Kiplol/kagura/archive/refs/tags/v0.1.2.tar.gz"
-  sha256 "8f24e6457fb88f58a14bc1fff2e911fb7e8ff467cb0d9f5172d090aed80078cc"
+  url "https://github.com/Kiplol/kagura/archive/refs/tags/v0.1.3.tar.gz"
+  sha256 "aa35d919b03e7e4c87edeb5a920eb7d09d5c4e7a5fa01b39dda8223c88f568e1"
   license "MIT"
   head "https://github.com/Kiplol/kagura.git", branch: "main"
 
