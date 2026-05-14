@@ -480,7 +480,20 @@ func (a *App) buildMainPage() {
 
 	a.pages.AddPage("main", a.rootFlex, true, true)
 
-	a.tab = a.cfg.LastTab
+	// Don't restore the search tab — it's disorienting to land there with the
+	// input focused and no results. Fall back to Album Artists instead.
+	startTab := a.cfg.LastTab
+	startPage, startRow := a.cfg.LastPage, a.cfg.LastRow
+	if startTab == tabSearch {
+		startTab = tabArtists
+		startPage, startRow = 0, 0
+		// Correct the persisted value immediately so a quick quit doesn't re-save tabSearch.
+		a.cfg.LastTab = tabArtists
+		a.cfg.LastPage = 0
+		a.cfg.LastRow = 0
+		go config.Save(a.cfg)
+	}
+	a.tab = startTab
 	a.updateTabBar()
 	a.updateNowBar()
 	a.updateQueuePanel()
@@ -492,7 +505,7 @@ func (a *App) buildMainPage() {
 	go a.loadPlayQueue()
 
 	// Load the last-used tab; restore page and row after content arrives.
-	go a.fetchTabAndRestore(a.cfg.LastTab, a.cfg.LastPage, a.cfg.LastRow)
+	go a.fetchTabAndRestore(startTab, startPage, startRow)
 }
 
 // ---------------------------------------------------------------------------
